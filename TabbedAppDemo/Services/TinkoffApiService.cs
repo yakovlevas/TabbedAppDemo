@@ -1,5 +1,7 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using static TabbedAppDemo.Services.TinkoffApiService;
 
 namespace TabbedAppDemo.Services
 {
@@ -9,20 +11,29 @@ namespace TabbedAppDemo.Services
         private string _apiKey;
         private string _currentAccountId;
         private bool _isConnected;
+        private Dictionary<string, string> _figiToTickerCache = new();
 
         private readonly JsonSerializerOptions _jsonOptions = new()
         {
             PropertyNameCaseInsensitive = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString,
+            Converters = {
+                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase),
+                new BooleanConverter(),
+                new StringLongConverter(),
+                new QuotationConverter()
+            }
         };
 
         public TinkoffApiService()
         {
             _httpClient = new HttpClient
             {
-                BaseAddress = new Uri("https://api-invest.tinkoff.ru/openapi/"),
+                BaseAddress = new Uri("https://invest-public-api.tinkoff.ru/rest/"),
                 Timeout = TimeSpan.FromSeconds(30)
             };
+            _httpClient.DefaultRequestHeaders.Add("accept", "application/json");
         }
 
         public async Task<bool> ConnectAsync(string apiKey)
@@ -35,29 +46,32 @@ namespace TabbedAppDemo.Services
                     throw new ArgumentException("API ключ не может быть пустым");
                 }
 
-                _httpClient.DefaultRequestHeaders.Clear();
-                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
-                _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
 
-                // 1. Проверяем, что ключ валидный - запрашиваем счета
-                var accountsResponse = await _httpClient.GetAsync("user/accounts");
+                // Проверяем подключение - запрашиваем информацию о пользователе
+                var request = new { };
+                var response = await SendRequest<GetInfoResponse>(
+                    "tinkoff.public.invest.api.contract.v1.UsersService/GetInfo",
+                    request);
 
-                if (!accountsResponse.IsSuccessStatusCode)
+                if (response == null)
                 {
-                    var errorContent = await accountsResponse.Content.ReadAsStringAsync();
-                    throw new Exception($"Ошибка API: {accountsResponse.StatusCode}. {errorContent}");
+                    throw new Exception("Не удалось получить информацию о пользователе");
                 }
 
-                var accountsJson = await accountsResponse.Content.ReadAsStringAsync();
-                var accounts = ParseAccountsResponse(accountsJson);
+                // Получаем список счетов
+                var accountsResponse = await SendRequest<GetAccountsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts",
+                    new { });
 
-                if (accounts == null || accounts.Count == 0)
+                if (accountsResponse?.Accounts == null || accountsResponse.Accounts.Count == 0)
                 {
                     throw new Exception("Не найдено брокерских счетов");
                 }
 
-                // 2. Используем первый счет по умолчанию
-                _currentAccountId = accounts[0].BrokerAccountId;
+                // Используем первый счет по умолчанию
+                _currentAccountId = accountsResponse.Accounts[0].Id;
                 _isConnected = true;
 
                 return true;
@@ -82,33 +96,37 @@ namespace TabbedAppDemo.Services
 
             try
             {
-                // 1. Получаем список счетов
-                var accountsResponse = await _httpClient.GetAsync("user/accounts");
-                accountsResponse.EnsureSuccessStatusCode();
+                // Получаем список счетов
+                var accountsResponse = await SendRequest<GetAccountsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts",
+                    new { });
 
-                var accountsJson = await accountsResponse.Content.ReadAsStringAsync();
-                var accounts = ParseAccountsResponse(accountsJson);
-
-                if (accounts == null || accounts.Count == 0)
+                if (accountsResponse?.Accounts == null || accountsResponse.Accounts.Count == 0)
                     throw new Exception("Счета не найдены");
 
-                // 2. Получаем портфель для основного счета
+                // Получаем портфель для основного счета
                 var portfolio = await GetPortfolioAsync();
 
-                // 3. Формируем информацию о счете
-                var mainAccount = accounts.FirstOrDefault(a => a.BrokerAccountId == _currentAccountId) ?? accounts[0];
+                // Получаем информацию о пользователе
+                var userInfo = await SendRequest<GetInfoResponse>(
+                    "tinkoff.public.invest.api.contract.v1.UsersService/GetInfo",
+                    new { });
+
+                // Формируем информацию о счете
+                var mainAccount = accountsResponse.Accounts.FirstOrDefault(a => a.Id == _currentAccountId)
+                    ?? accountsResponse.Accounts[0];
 
                 return new AccountInfo
                 {
-                    BrokerAccountId = mainAccount.BrokerAccountId,
-                    BrokerAccountType = mainAccount.BrokerAccountType,
-                    Status = "Active",
-                    OpenedDate = DateTime.Now.AddYears(-1), // В реальном API эта информация приходит отдельно
+                    BrokerAccountId = mainAccount.Id,
+                    BrokerAccountType = GetAccountType(mainAccount.Type),
+                    Status = GetAccountStatus(mainAccount.Status),
+                    OpenedDate = mainAccount.OpenedDate,
                     LastUpdate = DateTime.Now,
                     TotalBalance = portfolio.TotalPortfolioValue,
                     ExpectedYield = portfolio.ExpectedYield,
-                    Currency = "RUB",
-                    TotalAccounts = accounts.Count
+                    Currency = "RUB", // По умолчанию
+                    TotalAccounts = accountsResponse.Accounts.Count
                 };
             }
             catch (Exception ex)
@@ -123,15 +141,58 @@ namespace TabbedAppDemo.Services
 
             try
             {
-                var url = string.IsNullOrEmpty(_currentAccountId)
-                    ? "portfolio"
-                    : $"portfolio?brokerAccountId={_currentAccountId}";
+                var request = new
+                {
+                    accountId = _currentAccountId,
+                    currency = "RUB"
+                };
 
-                var response = await _httpClient.GetAsync(url);
-                response.EnsureSuccessStatusCode();
+                var response = await SendRequest<GetPortfolioResponse>(
+                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio",
+                    request);
 
-                var json = await response.Content.ReadAsStringAsync();
-                return ParsePortfolioResponse(json);
+                if (response == null)
+                    throw new Exception("Пустой ответ от API");
+
+                var portfolioInfo = new PortfolioInfo
+                {
+                    Positions = new List<PortfolioPosition>(),
+                    Currency = "RUB"
+                };
+
+                // Рассчитываем общую стоимость
+                if (response.TotalAmountPortfolio != null)
+                {
+                    portfolioInfo.TotalPortfolioValue = response.TotalAmountPortfolio.ToDecimal();
+                }
+
+                // Обрабатываем позиции
+                if (response.Positions != null)
+                {
+                    foreach (var position in response.Positions)
+                    {
+                        var portfolioPosition = new PortfolioPosition
+                        {
+                            Figi = position.Figi,
+                            InstrumentType = position.InstrumentType,
+                            Balance = position.Quantity?.ToDecimal() ?? 0,
+                            CurrentPrice = position.CurrentPrice?.ToDecimal() ?? 0
+                        };
+
+                        // Получаем тикер для FIGI
+                        portfolioPosition.Ticker = await GetTickerForFigi(position.Figi);
+
+                        // Рассчитываем среднюю цену (для упрощения используем текущую)
+                        portfolioPosition.AveragePositionPrice = portfolioPosition.CurrentPrice;
+
+                        // Рассчитываем доходность
+                        portfolioPosition.ExpectedYield = 0; // В реальном API это поле приходит отдельно
+
+                        portfolioInfo.Positions.Add(portfolioPosition);
+                    }
+                }
+
+                return portfolioInfo;
             }
             catch (Exception ex)
             {
@@ -145,11 +206,18 @@ namespace TabbedAppDemo.Services
 
             try
             {
-                var response = await _httpClient.GetAsync("user/accounts");
-                response.EnsureSuccessStatusCode();
+                var response = await SendRequest<GetAccountsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts",
+                    new { });
 
-                var json = await response.Content.ReadAsStringAsync();
-                return ParseAccountsResponse(json);
+                if (response?.Accounts == null)
+                    return new List<Account>();
+
+                return response.Accounts.Select(a => new Account
+                {
+                    BrokerAccountType = GetAccountType(a.Type),
+                    BrokerAccountId = a.Id
+                }).ToList();
             }
             catch (Exception ex)
             {
@@ -164,7 +232,8 @@ namespace TabbedAppDemo.Services
             _isConnected = false;
             _apiKey = null;
             _currentAccountId = null;
-            _httpClient.DefaultRequestHeaders.Clear();
+            _httpClient.DefaultRequestHeaders.Authorization = null;
+            _figiToTickerCache.Clear();
         }
 
         #region Private Methods
@@ -175,157 +244,271 @@ namespace TabbedAppDemo.Services
                 throw new InvalidOperationException("Не подключено к Tinkoff API. Сначала выполните ConnectAsync.");
         }
 
-        private List<Account> ParseAccountsResponse(string json)
+        private async Task<string> GetTickerForFigi(string figi)
         {
+            if (string.IsNullOrEmpty(figi))
+                return "";
+
+            // Проверяем кэш
+            if (_figiToTickerCache.TryGetValue(figi, out string cachedTicker))
+                return cachedTicker;
+
             try
             {
-                var response = JsonSerializer.Deserialize<TinkoffApiResponse<AccountsPayload>>(json, _jsonOptions);
-
-                return response?.Payload?.Accounts?.Select(a => new Account
+                var request = new
                 {
-                    BrokerAccountType = a.BrokerAccountType,
-                    BrokerAccountId = a.BrokerAccountId
-                }).ToList() ?? new List<Account>();
+                    idType = "INSTRUMENT_ID_TYPE_FIGI",
+                    classCode = "",
+                    id = figi
+                };
+
+                var response = await SendRequest<InstrumentByResponse>(
+                    "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy",
+                    request);
+
+                if (response?.Instrument != null && !string.IsNullOrEmpty(response.Instrument.Ticker))
+                {
+                    _figiToTickerCache[figi] = response.Instrument.Ticker;
+                    return response.Instrument.Ticker;
+                }
             }
-            catch (JsonException)
+            catch (Exception)
             {
-                // Альтернативный парсинг для другой структуры ответа
-                try
-                {
-                    using var doc = JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-
-                    if (root.TryGetProperty("payload", out var payload) &&
-                        payload.TryGetProperty("accounts", out var accounts))
-                    {
-                        var result = new List<Account>();
-                        foreach (var account in accounts.EnumerateArray())
-                        {
-                            result.Add(new Account
-                            {
-                                BrokerAccountType = account.GetProperty("brokerAccountType").GetString(),
-                                BrokerAccountId = account.GetProperty("brokerAccountId").GetString()
-                            });
-                        }
-                        return result;
-                    }
-                }
-                catch
-                {
-                    // Если и этот парсинг не удался
-                }
-
-                return new List<Account>();
+                // Игнорируем ошибки получения тикера
             }
+
+            return "";
         }
 
-        private PortfolioInfo ParsePortfolioResponse(string json)
+        private async Task<T> SendRequest<T>(string method, object request)
         {
-            var portfolioInfo = new PortfolioInfo
+            var json = JsonSerializer.Serialize(request, _jsonOptions);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(method, content);
+
+            if (!response.IsSuccessStatusCode)
             {
-                Positions = new List<PortfolioPosition>(),
-                Currency = "RUB"
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Ошибка API ({response.StatusCode}): {errorContent}");
+            }
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<T>(responseString, _jsonOptions);
+        }
+
+        private string GetAccountType(string type)
+        {
+            return type switch
+            {
+                "ACCOUNT_TYPE_TINKOFF" => "Брокерский счет Tinkoff",
+                "ACCOUNT_TYPE_TINKOFF_IIS" => "ИИС Tinkoff",
+                "ACCOUNT_TYPE_INVEST_BOX" => "Инвесткопилка",
+                _ => type
             };
+        }
 
-            try
+        private string GetAccountStatus(string status)
+        {
+            return status switch
             {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("payload", out var payload))
-                {
-                    // Парсим позиции
-                    if (payload.TryGetProperty("positions", out var positions))
-                    {
-                        foreach (var position in positions.EnumerateArray())
-                        {
-                            var portfolioPosition = new PortfolioPosition();
-
-                            if (position.TryGetProperty("figi", out var figi))
-                                portfolioPosition.Figi = figi.GetString();
-
-                            if (position.TryGetProperty("ticker", out var ticker))
-                                portfolioPosition.Ticker = ticker.GetString();
-
-                            if (position.TryGetProperty("name", out var name))
-                                portfolioPosition.Name = name.GetString();
-
-                            if (position.TryGetProperty("instrumentType", out var instrumentType))
-                                portfolioPosition.InstrumentType = instrumentType.GetString();
-
-                            if (position.TryGetProperty("balance", out var balance))
-                                portfolioPosition.Balance = balance.GetDecimal();
-
-                            if (position.TryGetProperty("averagePositionPrice", out var avgPrice) &&
-                                avgPrice.TryGetProperty("value", out var avgPriceValue))
-                                portfolioPosition.AveragePositionPrice = avgPriceValue.GetDecimal();
-
-                            if (position.TryGetProperty("expectedYield", out var yield) &&
-                                yield.TryGetProperty("value", out var yieldValue))
-                                portfolioPosition.ExpectedYield = yieldValue.GetDecimal();
-
-                            // Для текущей цены нужно делать отдельный запрос к market/orderbook
-                            // Здесь используем среднюю цену как текущую для демонстрации
-                            portfolioPosition.CurrentPrice = portfolioPosition.AveragePositionPrice;
-
-                            portfolioInfo.Positions.Add(portfolioPosition);
-                        }
-                    }
-
-                    // Рассчитываем общую стоимость портфеля
-                    portfolioInfo.TotalPortfolioValue = portfolioInfo.Positions
-                        .Sum(p => p.Balance * p.CurrentPrice);
-
-                    // Получаем ожидаемую доходность
-                    if (payload.TryGetProperty("expectedYield", out var totalYield) &&
-                        totalYield.TryGetProperty("value", out var totalYieldValue))
-                    {
-                        portfolioInfo.ExpectedYield = totalYieldValue.GetDecimal();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка парсинга портфеля: {ex.Message}");
-                // Возвращаем пустой портфель с базовыми значениями
-                portfolioInfo.TotalPortfolioValue = 0;
-                portfolioInfo.ExpectedYield = 0;
-            }
-
-            return portfolioInfo;
+                "ACCOUNT_STATUS_NEW" => "Новый",
+                "ACCOUNT_STATUS_OPEN" => "Открыт",
+                "ACCOUNT_STATUS_CLOSED" => "Закрыт",
+                _ => status
+            };
         }
 
         #endregion
 
-        #region Response Models
+        #region Response Models (из тестовой программы)
 
-        private class TinkoffApiResponse<T>
+        public class GetInfoResponse
         {
-            [JsonPropertyName("trackingId")]
-            public string TrackingId { get; set; }
+            [JsonConverter(typeof(BooleanConverter))]
+            public bool PremStatus { get; set; }
 
-            [JsonPropertyName("status")]
-            public string Status { get; set; }
+            [JsonConverter(typeof(BooleanConverter))]
+            public bool QualStatus { get; set; }
 
-            [JsonPropertyName("payload")]
-            public T Payload { get; set; }
+            public List<string> QualifiedForWorkWith { get; set; } = new List<string>();
+            public string Tariff { get; set; } = "";
+            public string UserId { get; set; } = "";
+            public string RiskLevelCode { get; set; } = "";
         }
 
-        private class AccountsPayload
+        public class GetAccountsResponse
         {
-            [JsonPropertyName("accounts")]
-            public List<TinkoffAccount> Accounts { get; set; }
+            public List<ApiAccount> Accounts { get; set; } = new List<ApiAccount>();
         }
 
-        private class TinkoffAccount
+        public class ApiAccount
         {
-            [JsonPropertyName("brokerAccountType")]
-            public string BrokerAccountType { get; set; }
+            public string Id { get; set; } = "";
+            public string Type { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Status { get; set; } = "";
+            public DateTime OpenedDate { get; set; }
+            public DateTime ClosedDate { get; set; }
+        }
 
-            [JsonPropertyName("brokerAccountId")]
-            public string BrokerAccountId { get; set; }
+        public class GetPortfolioResponse
+        {
+            public MoneyValue TotalAmountPortfolio { get; set; } = new MoneyValue();
+            public List<ApiPortfolioPosition> Positions { get; set; } = new List<ApiPortfolioPosition>();
+        }
+
+        public class ApiPortfolioPosition
+        {
+            public string Figi { get; set; } = "";
+            public string InstrumentType { get; set; } = "";
+            public Quotation Quantity { get; set; } = new Quotation();
+            public MoneyValue CurrentPrice { get; set; } = new MoneyValue();
+        }
+
+        public class InstrumentByResponse
+        {
+            public ApiInstrument Instrument { get; set; } = new ApiInstrument();
+        }
+
+        public class ApiInstrument
+        {
+            public string Figi { get; set; } = "";
+            public string Ticker { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Currency { get; set; } = "";
+            public int Lot { get; set; }
+        }
+
+        public class MoneyValue
+        {
+            public string Currency { get; set; } = "";
+            public Quotation UnitsNano { get; set; } = new Quotation();
+
+            public decimal ToDecimal()
+            {
+                return UnitsNano.ToDecimal();
+            }
+        }
+
+        public class Quotation
+        {
+            [JsonConverter(typeof(StringLongConverter))]
+            public long Units { get; set; }
+
+            [JsonConverter(typeof(StringLongConverter))]
+            public long Nano { get; set; }
+
+            public decimal ToDecimal()
+            {
+                return Units + (Nano / 1_000_000_000m);
+            }
         }
 
         #endregion
     }
+
+    #region Converters
+
+    public class BooleanConverter : JsonConverter<bool>
+    {
+        public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.TokenType switch
+            {
+                JsonTokenType.True => true,
+                JsonTokenType.False => false,
+                JsonTokenType.String => bool.TryParse(reader.GetString(), out bool result) && result,
+                JsonTokenType.Number => reader.GetInt32() != 0,
+                _ => false
+            };
+        }
+
+        public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+        {
+            writer.WriteBooleanValue(value);
+        }
+    }
+
+    public class StringLongConverter : JsonConverter<long>
+    {
+        public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                return long.TryParse(reader.GetString(), out long result) ? result : 0;
+            }
+            return reader.TryGetInt64(out long value) ? value : 0;
+        }
+
+        public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options)
+        {
+            writer.WriteNumberValue(value);
+        }
+    }
+
+    public class QuotationConverter : JsonConverter<MoneyValue>
+    {
+        public override MoneyValue Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var moneyValue = new MoneyValue();
+
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject)
+                    {
+                        break;
+                    }
+
+                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        var propertyName = reader.GetString();
+                        reader.Read();
+
+                        switch (propertyName)
+                        {
+                            case "currency":
+                                moneyValue.Currency = reader.GetString() ?? "";
+                                break;
+                            case "units":
+                                if (reader.TokenType == JsonTokenType.String)
+                                {
+                                    moneyValue.UnitsNano.Units = long.TryParse(reader.GetString(), out long units) ? units : 0;
+                                }
+                                else if (reader.TokenType == JsonTokenType.Number)
+                                {
+                                    moneyValue.UnitsNano.Units = reader.TryGetInt64(out long units) ? units : 0;
+                                }
+                                break;
+                            case "nano":
+                                if (reader.TokenType == JsonTokenType.String)
+                                {
+                                    moneyValue.UnitsNano.Nano = long.TryParse(reader.GetString(), out long nano) ? nano : 0;
+                                }
+                                else if (reader.TokenType == JsonTokenType.Number)
+                                {
+                                    moneyValue.UnitsNano.Nano = reader.TryGetInt64(out long nano) ? nano : 0;
+                                }
+                                break;
+                        }
+                    }
+                }
+            }
+
+            return moneyValue;
+        }
+
+        public override void Write(Utf8JsonWriter writer, MoneyValue value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("currency", value.Currency);
+            writer.WriteNumber("units", value.UnitsNano.Units);
+            writer.WriteNumber("nano", value.UnitsNano.Nano);
+            writer.WriteEndObject();
+        }
+    }
+
+    #endregion
 }
