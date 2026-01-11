@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using CommunityToolkit.Maui;
+﻿using CommunityToolkit.Maui;
+using TabbedAppDemo.Services;
+using TabbedAppDemo.ViewModels;
+using TabbedAppDemo.Views;
 
 namespace TabbedAppDemo
 {
@@ -17,9 +19,18 @@ namespace TabbedAppDemo
                     fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
                 });
 
-#if DEBUG
-    		builder.Logging.AddDebug();
-#endif
+            // Регистрация сервисов
+            builder.Services.AddSingleton<IDialogService, DialogService>();
+
+            // Регистрация ViewModels
+            builder.Services.AddTransient<Tab1ViewModel>();
+            builder.Services.AddTransient<Tab2ViewModel>();
+            builder.Services.AddTransient<Tab3ViewModel>();
+
+            // Регистрация страниц
+            builder.Services.AddTransient<Tab1Page>();
+            builder.Services.AddTransient<Tab2Page>();
+            builder.Services.AddTransient<Tab3Page>();
 
             return builder.Build();
         }

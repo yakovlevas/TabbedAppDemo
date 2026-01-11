@@ -5,10 +5,7 @@
              x:Class="TabbedAppDemo.Views.Tab1Page"
              Title="Tab1">
 
-    <ContentPage.BindingContext>
-        <viewmodels:Tab1ViewModel />
-    </ContentPage.BindingContext>
-
+   
     <ScrollView>
         <VerticalStackLayout 
             Spacing="25" 
