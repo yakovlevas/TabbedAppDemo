@@ -22,6 +22,7 @@ namespace TabbedAppDemo
             // Регистрация сервисов
             builder.Services.AddSingleton<IDialogService, DialogService>();
             builder.Services.AddSingleton<ITinkoffApiService, TinkoffApiService>();
+            builder.Services.AddSingleton<IConnectionStateService, SimpleConnectionStateService>();
 
             // Регистрация ViewModels
             builder.Services.AddTransient<Tab1ViewModel>();

@@ -237,6 +237,51 @@ namespace TabbedAppDemo.Services
             }
         }
 
+        public async Task<List<Operation>> GetOperationsAsync(DateTime from, DateTime to, string accountId = null)
+        {
+            EnsureConnected();
+
+            try
+            {
+                var targetAccountId = accountId ?? _currentAccountId;
+
+                var request = new
+                {
+                    accountId = targetAccountId,
+                    from = FormatDate(from),
+                    to = FormatDate(to),
+                    state = "OPERATION_STATE_EXECUTED"
+                };
+
+                var response = await SendRequest<GetOperationsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
+                    request);
+
+                if (response?.Operations == null || !response.Operations.Any())
+                {
+                    return new List<Operation>();
+                }
+
+                // Преобразуем операции API в нашу модель
+                var operations = new List<Operation>();
+
+                foreach (var apiOperation in response.Operations)
+                {
+                    var operation = await ConvertApiOperationToModel(apiOperation);
+                    if (operation != null)
+                    {
+                        operations.Add(operation);
+                    }
+                }
+
+                return operations.OrderByDescending(o => o.Date).ToList();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
+            }
+        }
+
         public Task<bool> IsConnected() => Task.FromResult(_isConnected);
 
         public void Disconnect()
@@ -346,6 +391,220 @@ namespace TabbedAppDemo.Services
             }
         }
 
+        #endregion
+
+        #region Private Methods
+
+        private void EnsureConnected()
+        {
+            if (!_isConnected || string.IsNullOrWhiteSpace(_apiKey))
+                throw new InvalidOperationException("Не подключено к Tinkoff API. Сначала выполните ConnectAsync.");
+        }
+
+        private async Task<string> GetTickerForFigi(string figi)
+        {
+            if (string.IsNullOrEmpty(figi))
+                return "";
+
+            // Проверяем кэш
+            if (_figiToTickerCache.TryGetValue(figi, out string cachedTicker))
+                return cachedTicker;
+
+            try
+            {
+                var instrumentInfo = await GetInstrumentInfoByFigi(figi);
+                if (!string.IsNullOrEmpty(instrumentInfo.Ticker))
+                {
+                    _figiToTickerCache[figi] = instrumentInfo.Ticker;
+                    return instrumentInfo.Ticker;
+                }
+            }
+            catch (Exception)
+            {
+                // Игнорируем ошибки получения тикера
+            }
+
+            return "";
+        }
+
+        private async Task<string> GetInstrumentName(string figi)
+        {
+            if (string.IsNullOrEmpty(figi))
+                return "";
+
+            try
+            {
+                var instrumentInfo = await GetInstrumentInfoByFigi(figi);
+                return instrumentInfo.Name;
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private async Task<InstrumentInfo> GetInstrumentInfoByFigi(string figi)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(figi))
+                    return new InstrumentInfo();
+
+                var request = new
+                {
+                    idType = "INSTRUMENT_ID_TYPE_FIGI",
+                    classCode = "",
+                    id = figi
+                };
+
+                var response = await SendRequest<InstrumentByResponse>(
+                    "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy",
+                    request);
+
+                return new InstrumentInfo
+                {
+                    Ticker = response?.Instrument?.Ticker ?? "",
+                    Name = response?.Instrument?.Name ?? "",
+                    InstrumentType = response?.Instrument?.InstrumentType ?? ""
+                };
+            }
+            catch (Exception)
+            {
+                return new InstrumentInfo();
+            }
+        }
+
+        private async Task<Operation> ConvertApiOperationToModel(ApiOperation apiOperation)
+        {
+            try
+            {
+                var operation = new Operation
+                {
+                    Id = apiOperation.Id,
+                    Date = apiOperation.Date.ToLocalTime(),
+                    OperationType = GetOperationTypeName(apiOperation.OperationType),
+                    Quantity = apiOperation.Quantity,
+                    Price = apiOperation.Price?.ToDecimal() ?? 0,
+                    Payment = apiOperation.Payment?.ToDecimal() ?? 0,
+                    Currency = apiOperation.Currency ?? "RUB",
+                    Status = GetOperationStateName(apiOperation.State)
+                };
+
+                // Получаем информацию об инструменте по FIGI
+                if (!string.IsNullOrEmpty(apiOperation.Figi))
+                {
+                    var instrumentInfo = await GetInstrumentInfoByFigi(apiOperation.Figi);
+                    operation.Ticker = instrumentInfo.Ticker;
+                    operation.Name = instrumentInfo.Name;
+                    operation.InstrumentType = GetInstrumentTypeName(instrumentInfo.InstrumentType ?? apiOperation.InstrumentType);
+                }
+                else
+                {
+                    // Для денежных операций
+                    operation.Ticker = GetCurrencySymbol(operation.Currency);
+                    operation.Name = GetOperationDescription(apiOperation.OperationType, operation.Currency);
+                    operation.InstrumentType = "Денежная операция";
+                }
+
+                return operation;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private string FormatDate(DateTime date)
+        {
+            return date.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+        }
+
+        private string GetOperationTypeName(string type)
+        {
+            return type switch
+            {
+                "OPERATION_TYPE_BUY" => "Покупка",
+                "OPERATION_TYPE_SELL" => "Продажа",
+                "OPERATION_TYPE_DIVIDEND" => "Дивиденды",
+                "OPERATION_TYPE_COUPON" => "Купон",
+                "OPERATION_TYPE_BROKER_FEE" => "Комиссия",
+                "OPERATION_TYPE_INPUT" => "Пополнение",
+                "OPERATION_TYPE_OUTPUT" => "Вывод",
+                "OPERATION_TYPE_TAX" => "Налог",
+                _ => type?.Replace("OPERATION_TYPE_", "") ?? "Операция"
+            };
+        }
+
+        private string GetOperationStateName(string state)
+        {
+            return state switch
+            {
+                "OPERATION_STATE_EXECUTED" => "Исполнена",
+                "OPERATION_STATE_CANCELED" => "Отменена",
+                "OPERATION_STATE_PROGRESS" => "В процессе",
+                _ => state?.Replace("OPERATION_STATE_", "") ?? "Неизвестно"
+            };
+        }
+
+        private string GetCurrencySymbol(string currency)
+        {
+            return currency?.ToUpper() switch
+            {
+                "RUB" => "₽",
+                "USD" => "$",
+                "EUR" => "€",
+                "GBP" => "£",
+                _ => currency ?? "RUB"
+            };
+        }
+
+        private string GetOperationDescription(string operationType, string currency)
+        {
+            return operationType switch
+            {
+                "OPERATION_TYPE_INPUT" => $"Пополнение ({currency})",
+                "OPERATION_TYPE_OUTPUT" => $"Вывод ({currency})",
+                "OPERATION_TYPE_BROKER_FEE" => $"Брокерская комиссия ({currency})",
+                "OPERATION_TYPE_TAX" => $"Налог ({currency})",
+                _ => $"Операция ({currency})"
+            };
+        }
+
+        private string GetInstrumentTypeName(string type)
+        {
+            return type?.ToLower() switch
+            {
+                "share" or "stock" => "Акция",
+                "bond" => "Облигация",
+                "etf" => "Фонд",
+                "currency" => "Валюта",
+                "future" => "Фьючерс",
+                _ => type ?? "Инструмент"
+            };
+        }
+
+        private string GetAccountType(string type)
+        {
+            return type switch
+            {
+                "ACCOUNT_TYPE_TINKOFF" => "Брокерский счет Tinkoff",
+                "ACCOUNT_TYPE_TINKOFF_IIS" => "ИИС Tinkoff",
+                "ACCOUNT_TYPE_INVEST_BOX" => "Инвесткопилка",
+                _ => type
+            };
+        }
+
+        private string GetAccountStatus(string status)
+        {
+            return status switch
+            {
+                "ACCOUNT_STATUS_NEW" => "Новый",
+                "ACCOUNT_STATUS_OPEN" => "Открыт",
+                "ACCOUNT_STATUS_CLOSED" => "Закрыт",
+                _ => status
+            };
+        }
+
         // Простое шифрование для базовой безопасности
         private string SimpleEncrypt(string input)
         {
@@ -391,78 +650,6 @@ namespace TabbedAppDemo.Services
             }
         }
 
-        #endregion
-
-        #region Private Methods
-
-        private void EnsureConnected()
-        {
-            if (!_isConnected || string.IsNullOrWhiteSpace(_apiKey))
-                throw new InvalidOperationException("Не подключено к Tinkoff API. Сначала выполните ConnectAsync.");
-        }
-
-        private async Task<string> GetTickerForFigi(string figi)
-        {
-            if (string.IsNullOrEmpty(figi))
-                return "";
-
-            // Проверяем кэш
-            if (_figiToTickerCache.TryGetValue(figi, out string cachedTicker))
-                return cachedTicker;
-
-            try
-            {
-                var request = new
-                {
-                    idType = "INSTRUMENT_ID_TYPE_FIGI",
-                    classCode = "",
-                    id = figi
-                };
-
-                var response = await SendRequest<InstrumentByResponse>(
-                    "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy",
-                    request);
-
-                if (response?.Instrument != null && !string.IsNullOrEmpty(response.Instrument.Ticker))
-                {
-                    _figiToTickerCache[figi] = response.Instrument.Ticker;
-                    return response.Instrument.Ticker;
-                }
-            }
-            catch (Exception)
-            {
-                // Игнорируем ошибки получения тикера
-            }
-
-            return "";
-        }
-
-        private async Task<string> GetInstrumentName(string figi)
-        {
-            if (string.IsNullOrEmpty(figi))
-                return "";
-
-            try
-            {
-                var request = new
-                {
-                    idType = "INSTRUMENT_ID_TYPE_FIGI",
-                    classCode = "",
-                    id = figi
-                };
-
-                var response = await SendRequest<InstrumentByResponse>(
-                    "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy",
-                    request);
-
-                return response?.Instrument?.Name ?? "";
-            }
-            catch (Exception)
-            {
-                return "";
-            }
-        }
-
         private async Task<T> SendRequest<T>(string method, object request)
         {
             var json = JsonSerializer.Serialize(request, _jsonOptions);
@@ -478,28 +665,6 @@ namespace TabbedAppDemo.Services
 
             var responseString = await response.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<T>(responseString, _jsonOptions);
-        }
-
-        private string GetAccountType(string type)
-        {
-            return type switch
-            {
-                "ACCOUNT_TYPE_TINKOFF" => "Брокерский счет Tinkoff",
-                "ACCOUNT_TYPE_TINKOFF_IIS" => "ИИС Tinkoff",
-                "ACCOUNT_TYPE_INVEST_BOX" => "Инвесткопилка",
-                _ => type
-            };
-        }
-
-        private string GetAccountStatus(string status)
-        {
-            return status switch
-            {
-                "ACCOUNT_STATUS_NEW" => "Новый",
-                "ACCOUNT_STATUS_OPEN" => "Открыт",
-                "ACCOUNT_STATUS_CLOSED" => "Закрыт",
-                _ => status
-            };
         }
 
         #endregion
@@ -549,6 +714,39 @@ namespace TabbedAppDemo.Services
             public MoneyValue CurrentPrice { get; set; } = new MoneyValue();
         }
 
+        public class GetOperationsResponse
+        {
+            public List<ApiOperation> Operations { get; set; } = new List<ApiOperation>();
+        }
+
+        public class ApiOperation
+        {
+            public string Id { get; set; } = "";
+            public string ParentOperationId { get; set; } = "";
+            public string Currency { get; set; } = "";
+            public MoneyValue Payment { get; set; } = new MoneyValue();
+            public MoneyValue Price { get; set; } = new MoneyValue();
+            public string State { get; set; } = "";
+            public long Quantity { get; set; }
+            public long QuantityRest { get; set; }
+            public string Figi { get; set; } = "";
+            public string InstrumentType { get; set; } = "";
+            public DateTime Date { get; set; }
+            public string OperationType { get; set; } = "";
+            public List<OperationTrade> Trades { get; set; } = new List<OperationTrade>();
+            public string AssetUid { get; set; } = "";
+            public string PositionUid { get; set; } = "";
+            public string InstrumentUid { get; set; } = "";
+        }
+
+        public class OperationTrade
+        {
+            public string TradeId { get; set; } = "";
+            public DateTime DateTime { get; set; }
+            public long Quantity { get; set; }
+            public MoneyValue Price { get; set; } = new MoneyValue();
+        }
+
         public class InstrumentByResponse
         {
             public ApiInstrument Instrument { get; set; } = new ApiInstrument();
@@ -561,6 +759,7 @@ namespace TabbedAppDemo.Services
             public string Name { get; set; } = "";
             public string Currency { get; set; } = "";
             public int Lot { get; set; }
+            public string InstrumentType { get; set; } = "";
         }
 
         public class MoneyValue

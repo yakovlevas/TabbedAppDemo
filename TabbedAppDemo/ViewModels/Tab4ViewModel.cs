@@ -8,6 +8,7 @@ namespace TabbedAppDemo.ViewModels
     {
         private readonly ITinkoffApiService _tinkoffService;
         private readonly IDialogService _dialogService;
+        private readonly IConnectionStateService _connectionState;
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(CanConnect))]
@@ -53,10 +54,14 @@ namespace TabbedAppDemo.ViewModels
         public bool CanConnect => !_isLoading && !string.IsNullOrWhiteSpace(_apiKey);
         public bool CanGetInfo => _isAuthenticated && !_isLoading;
 
-        public Tab4ViewModel(ITinkoffApiService tinkoffService, IDialogService dialogService)
+        public Tab4ViewModel(
+            ITinkoffApiService tinkoffService,
+            IDialogService dialogService,
+            IConnectionStateService connectionState)
         {
             _tinkoffService = tinkoffService;
             _dialogService = dialogService;
+            _connectionState = connectionState;
 
             // При создании ViewModel проверяем сохранённый токен
             InitializeAsync();
@@ -133,6 +138,9 @@ namespace TabbedAppDemo.ViewModels
                     IsAuthenticated = true;
                     ConnectionStatus = "Подключено ✓";
 
+                    // Обновляем глобальный статус подключения
+                    await _connectionState.SetConnectedAsync(true);
+
                     // Автоматически загружаем базовую информацию
                     await LoadAccountInfo();
 
@@ -189,6 +197,9 @@ namespace TabbedAppDemo.ViewModels
                 {
                     IsAuthenticated = true;
                     ConnectionStatus = "Подключено (сохранённый токен) ✓";
+
+                    // Обновляем глобальный статус подключения
+                    await _connectionState.SetConnectedAsync(true);
 
                     // Загружаем информацию о счете
                     await LoadAccountInfo();
@@ -283,7 +294,7 @@ namespace TabbedAppDemo.ViewModels
                     HasSavedToken = false;
 
                     // Также очищаем текущее подключение если оно было с сохранённым токеном
-                    if (IsAuthenticated && string.IsNullOrEmpty(ApiKey) || ApiKey.Contains("••••"))
+                    if (IsAuthenticated && (string.IsNullOrEmpty(ApiKey) || ApiKey.Contains("••••")))
                     {
                         ClearConnection();
                     }
@@ -372,17 +383,31 @@ namespace TabbedAppDemo.ViewModels
             }
         }
 
+        // Исправленный метод ClearConnection - только один метод
         [RelayCommand]
-        private void ClearConnection()
+        private async Task ClearConnection()
         {
-            _tinkoffService.Disconnect();
-            ApiKey = "";
-            IsAuthenticated = false;
-            ConnectionStatus = "Не подключено";
-            AccountInfoText = "Информация о счёте не загружена";
-            PortfolioInfoText = "Портфель не загружен";
-            TotalPortfolioValue = 0;
-            ExpectedYield = 0;
+            try
+            {
+                _tinkoffService.Disconnect();
+                ApiKey = "";
+                IsAuthenticated = false;
+                ConnectionStatus = "Не подключено";
+                AccountInfoText = "Информация о счёте не загружена";
+                PortfolioInfoText = "Портфель не загружен";
+                TotalPortfolioValue = 0;
+                ExpectedYield = 0;
+
+                // Обновляем глобальный статус подключения
+                await _connectionState.SetConnectedAsync(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка в ClearConnection: {ex.Message}");
+                // Все равно продолжаем - очищаем локальное состояние
+                IsAuthenticated = false;
+                ConnectionStatus = "Не подключено";
+            }
         }
 
         [RelayCommand]
@@ -454,6 +479,17 @@ namespace TabbedAppDemo.ViewModels
             {
                 IsLoading = false;
             }
+        }
+
+        // Метод для быстрого отключения без асинхронности (если нужно)
+        public void QuickDisconnect()
+        {
+            _tinkoffService.Disconnect();
+            IsAuthenticated = false;
+            ConnectionStatus = "Не подключено";
+
+            // Запускаем обновление статуса без ожидания
+            _ = _connectionState.SetConnectedAsync(false);
         }
     }
 }
