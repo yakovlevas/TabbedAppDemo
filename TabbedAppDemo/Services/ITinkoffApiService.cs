@@ -8,6 +8,11 @@
         Task<List<Account>> GetAccountsAsync();
         Task<bool> IsConnected();
         void Disconnect();
+        // Новые методы для работы с сохранением токена
+        Task<bool> TryConnectWithSavedTokenAsync();
+        Task SaveTokenAsync(string apiKey);
+        Task<bool> HasSavedToken();
+        Task ClearSavedToken();
     }
 
     public class AccountInfo

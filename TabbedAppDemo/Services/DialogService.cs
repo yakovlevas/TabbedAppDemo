@@ -1,55 +1,84 @@
-﻿// Services/DialogService.cs
-using CommunityToolkit.Maui.Alerts;
+﻿using CommunityToolkit.Maui.Alerts;
 using CommunityToolkit.Maui.Core;
+using Microsoft.Maui.ApplicationModel;
 
 namespace TabbedAppDemo.Services
 {
     public class DialogService : IDialogService
     {
-        public async Task ShowAlertAsync(string title, string message, string cancel = "OK")
+        public DialogService()
+        {
+            // Простой конструктор без зависимостей
+        }
+
+        public async Task ShowAlertAsync(string title, string message, string cancel)
         {
             if (Application.Current?.MainPage != null)
             {
-                await Application.Current.MainPage.DisplayAlert(title, message, cancel);
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                    Application.Current.MainPage.DisplayAlert(title, message, cancel));
             }
         }
 
-        public async Task<bool> ShowConfirmationAsync(string title, string message,
-                                                     string accept = "Yes", string cancel = "No")
+        public async Task<bool> ShowConfirmationAsync(string title, string message, string accept, string cancel)
         {
             if (Application.Current?.MainPage != null)
             {
-                return await Application.Current.MainPage.DisplayAlert(title, message, accept, cancel);
+                return await MainThread.InvokeOnMainThreadAsync(() =>
+                    Application.Current.MainPage.DisplayAlert(title, message, accept, cancel));
             }
+
             return false;
         }
 
-        public async Task<string> ShowActionSheetAsync(string title, string cancel = null,
-                                                      string destruction = null, params string[] buttons)
+        public async Task<string> ShowPromptAsync(string title, string message, string accept, string cancel, string placeholder = null, string initialValue = null)
         {
             if (Application.Current?.MainPage != null)
             {
-                return await Application.Current.MainPage.DisplayActionSheet(title, cancel, destruction, buttons);
+                return await MainThread.InvokeOnMainThreadAsync(() =>
+                    Application.Current.MainPage.DisplayPromptAsync(
+                        title,
+                        message,
+                        accept,
+                        cancel,
+                        placeholder,
+                        maxLength: 500,
+                        keyboard: Microsoft.Maui.Keyboard.Default,
+                        initialValue: initialValue));
             }
-            return string.Empty;
+
+            return null;
         }
 
-        // Реализация метода с int параметром
-        public async Task ShowToastAsync(string message, int durationMs = 3000)
+        public async Task ShowToastAsync(string message, int durationSeconds = 3)
         {
             try
             {
-                // Конвертируем миллисекунды в ToastDuration
-                var toastDuration = durationMs <= 2000 ? ToastDuration.Short : ToastDuration.Long;
+                // Конвертируем секунды в ToastDuration
+                ToastDuration duration = durationSeconds <= 2 ? ToastDuration.Short : ToastDuration.Long;
 
-                var toast = Toast.Make(message, toastDuration, 14);
-                await toast.Show();
+                var toast = Toast.Make(message, duration);
+                await MainThread.InvokeOnMainThreadAsync(() => toast.Show());
             }
-            catch
+            catch (Exception ex)
             {
-                // Fallback на DisplayAlert если Toast не доступен
-                await ShowAlertAsync("", message, "OK");
+                Console.WriteLine($"Toast error: {ex.Message}");
             }
+        }
+
+        public async Task<string> ShowActionSheetAsync(string title, string cancel, string destruction, params string[] buttons)
+        {
+            if (Application.Current?.MainPage != null)
+            {
+                return await MainThread.InvokeOnMainThreadAsync(() =>
+                    Application.Current.MainPage.DisplayActionSheet(
+                        title,
+                        cancel,
+                        destruction,
+                        buttons));
+            }
+
+            return null;
         }
     }
 }

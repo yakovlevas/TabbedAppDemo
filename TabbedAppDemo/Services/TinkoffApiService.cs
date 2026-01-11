@@ -26,6 +26,11 @@ namespace TabbedAppDemo.Services
             }
         };
 
+        private const string TOKEN_FILENAME = "tinkoff_token.dat";
+        private static readonly string TokenFilePath =
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "TabbedAppDemo", TOKEN_FILENAME);
+
         public TinkoffApiService()
         {
             _httpClient = new HttpClient
@@ -182,14 +187,21 @@ namespace TabbedAppDemo.Services
                         // Получаем тикер для FIGI
                         portfolioPosition.Ticker = await GetTickerForFigi(position.Figi);
 
+                        // Получаем название инструмента
+                        portfolioPosition.Name = await GetInstrumentName(position.Figi);
+
                         // Рассчитываем среднюю цену (для упрощения используем текущую)
                         portfolioPosition.AveragePositionPrice = portfolioPosition.CurrentPrice;
 
-                        // Рассчитываем доходность
-                        portfolioPosition.ExpectedYield = 0; // В реальном API это поле приходит отдельно
+                        // Рассчитываем доходность (0 для упрощения)
+                        portfolioPosition.ExpectedYield = 0;
 
                         portfolioInfo.Positions.Add(portfolioPosition);
                     }
+
+                    // Рассчитываем ожидаемую доходность (суммируем стоимость всех позиций)
+                    portfolioInfo.ExpectedYield = portfolioInfo.Positions
+                        .Sum(p => p.Balance * p.CurrentPrice * 0.01m); // Пример: 1% от стоимости
                 }
 
                 return portfolioInfo;
@@ -236,6 +248,151 @@ namespace TabbedAppDemo.Services
             _figiToTickerCache.Clear();
         }
 
+        #region Token Persistence Methods
+
+        public async Task<bool> TryConnectWithSavedTokenAsync()
+        {
+            try
+            {
+                var savedToken = await LoadTokenAsync();
+                if (!string.IsNullOrEmpty(savedToken))
+                {
+                    return await ConnectAsync(savedToken);
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task SaveTokenAsync(string apiKey)
+        {
+            try
+            {
+                // Создаем директорию если её нет
+                var directory = Path.GetDirectoryName(TokenFilePath);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                // Шифруем токен (базовое шифрование для безопасности)
+                var encryptedToken = SimpleEncrypt(apiKey);
+                await File.WriteAllTextAsync(TokenFilePath, encryptedToken);
+
+                // Устанавливаем скрытый атрибут файла (только на Windows)
+                try
+                {
+                    if (OperatingSystem.IsWindows())
+                    {
+                        File.SetAttributes(TokenFilePath, File.GetAttributes(TokenFilePath) | FileAttributes.Hidden);
+                    }
+                }
+                catch
+                {
+                    // Игнорируем ошибки установки атрибутов
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка сохранения токена: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task<bool> HasSavedToken()
+        {
+            try
+            {
+                return File.Exists(TokenFilePath) &&
+                       !string.IsNullOrEmpty(await LoadTokenAsync());
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task ClearSavedToken()
+        {
+            try
+            {
+                if (File.Exists(TokenFilePath))
+                {
+                    File.Delete(TokenFilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка удаления токена: {ex.Message}");
+            }
+        }
+
+        private async Task<string> LoadTokenAsync()
+        {
+            try
+            {
+                if (!File.Exists(TokenFilePath))
+                    return null;
+
+                var encryptedToken = await File.ReadAllTextAsync(TokenFilePath);
+                return SimpleDecrypt(encryptedToken);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // Простое шифрование для базовой безопасности
+        private string SimpleEncrypt(string input)
+        {
+            try
+            {
+                // Простая XOR шифровка с ключом
+                var key = "TabbedAppDemo2024!";
+                var result = new char[input.Length];
+
+                for (int i = 0; i < input.Length; i++)
+                {
+                    result[i] = (char)(input[i] ^ key[i % key.Length]);
+                }
+
+                return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(new string(result)));
+            }
+            catch
+            {
+                return input;
+            }
+        }
+
+        private string SimpleDecrypt(string input)
+        {
+            try
+            {
+                var bytes = Convert.FromBase64String(input);
+                var encrypted = System.Text.Encoding.UTF8.GetString(bytes);
+
+                var key = "TabbedAppDemo2024!";
+                var result = new char[encrypted.Length];
+
+                for (int i = 0; i < encrypted.Length; i++)
+                {
+                    result[i] = (char)(encrypted[i] ^ key[i % key.Length]);
+                }
+
+                return new string(result);
+            }
+            catch
+            {
+                return input;
+            }
+        }
+
+        #endregion
+
         #region Private Methods
 
         private void EnsureConnected()
@@ -278,6 +435,32 @@ namespace TabbedAppDemo.Services
             }
 
             return "";
+        }
+
+        private async Task<string> GetInstrumentName(string figi)
+        {
+            if (string.IsNullOrEmpty(figi))
+                return "";
+
+            try
+            {
+                var request = new
+                {
+                    idType = "INSTRUMENT_ID_TYPE_FIGI",
+                    classCode = "",
+                    id = figi
+                };
+
+                var response = await SendRequest<InstrumentByResponse>(
+                    "tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy",
+                    request);
+
+                return response?.Instrument?.Name ?? "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
         }
 
         private async Task<T> SendRequest<T>(string method, object request)
