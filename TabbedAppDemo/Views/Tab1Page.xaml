@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:viewmodels="clr-namespace:TabbedAppDemo.ViewModels"
              x:Class="TabbedAppDemo.Views.Tab1Page"
-             Title="Tab1">
+             Title="Tab1 (MVVM)">
 
     <ContentPage.BindingContext>
         <viewmodels:Tab1ViewModel />
@@ -17,21 +17,52 @@
 
             <Image
                 Source="dotnet_bot.svg"
+                SemanticProperties.Description="Cute dot net bot waving hi to you!"
                 HeightRequest="200"
                 HorizontalOptions="Center" />
 
-            <!-- Простая привязка для теста -->
             <Label
-                Text="{Binding WelcomeMessage}"
-                FontSize="24"
+                Text="Hello, Tab1 (MVVM Version)!"
+                SemanticProperties.HeadingLevel="Level1"
+                FontSize="32"
                 HorizontalOptions="Center" />
 
-            <!-- Простая кнопка для теста -->
+            <Label
+                Text="Welcome to .NET Multi-platform App UI"
+                SemanticProperties.HeadingLevel="Level2"
+                SemanticProperties.Description="Welcome to dot net Multi platform App U I"
+                FontSize="18"
+                HorizontalOptions="Center" />
+
+            <!-- КНОПКА "ПРИВЕТ МИР!" ЧЕРЕЗ MVVM КОМАНДУ -->
             <Button 
-                Text="Test MVVM Button"
-                Command="{Binding SayHelloCommand}"
+                Text="Нажми для приветствия (MVVM)"
+                Command="{Binding ShowHelloWorldCommand}"
                 HorizontalOptions="Center"
-                Padding="20,10" />
+                Padding="20,10"
+                BackgroundColor="#512BD4"
+                TextColor="White"
+                FontSize="16"
+                CornerRadius="8"
+                Margin="0,20,0,0" />
+
+            <!-- КНОПКА СЧЕТЧИКА ЧЕРЕЗ MVVM КОМАНДУ -->
+            <Button 
+                Text="Click me (MVVM)"
+                Command="{Binding IncrementCounterCommand}"
+                HorizontalOptions="Center"
+                Padding="20,10"
+                BackgroundColor="#2196F3"
+                TextColor="White"
+                FontSize="16"
+                CornerRadius="8" />
+
+            <!-- ЛЕЙБЛ СЧЕТЧИКА ЧЕРЕЗ MVVM СВОЙСТВО -->
+            <Label 
+                Text="{Binding CounterText}"
+                HorizontalOptions="Center"
+                FontSize="18"
+                FontAttributes="Bold" />
 
         </VerticalStackLayout>
     </ScrollView>
