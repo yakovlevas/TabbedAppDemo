@@ -10,45 +10,60 @@ namespace TabbedAppDemo.ViewModels
         private readonly IDialogService _dialogService;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(CanConnect))]
+        [NotifyPropertyChangedFor(nameof(ConnectionColor))]
         private string _apiKey = "";
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(ConnectionColor))]
         private string _connectionStatus = "Не подключено";
 
         [ObservableProperty]
-        private bool _isConnected = false;
+        [NotifyPropertyChangedFor(nameof(IsConnected))]
+        [NotifyPropertyChangedFor(nameof(ConnectionColor))]
+        [NotifyPropertyChangedFor(nameof(CanGetInfo))]
+        private bool _isAuthenticated = false;
 
         [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(CanConnect))]
+        [NotifyPropertyChangedFor(nameof(CanGetInfo))]
         private bool _isLoading = false;
 
         [ObservableProperty]
         private string _accountInfoText = "Информация о счёте не загружена";
 
-        // Вычисляемые свойства
-        public Color ConnectionColor => IsConnected ? Colors.Green : Colors.Red;
-        public bool CanConnect => !IsLoading;
+        [ObservableProperty]
+        private string _portfolioInfoText = "Портфель не загружен";
 
-        // Важно: ТОЛЬКО ОДИН конструктор с DI
+        [ObservableProperty]
+        private decimal _totalPortfolioValue;
+
+        [ObservableProperty]
+        private decimal _expectedYield;
+
+        // Вычисляемые свойства
+        public bool IsConnected => _isAuthenticated;
+        public Color ConnectionColor => _isAuthenticated ? Colors.Green : Colors.Red;
+        public bool CanConnect => !_isLoading && !string.IsNullOrWhiteSpace(_apiKey);
+        public bool CanGetInfo => _isAuthenticated && !_isLoading;
+
         public Tab4ViewModel(ITinkoffApiService tinkoffService, IDialogService dialogService)
         {
             _tinkoffService = tinkoffService;
             _dialogService = dialogService;
         }
 
-        // Уведомляем об изменении вычисляемых свойств
-        partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(ConnectionColor));
-        partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(CanConnect));
-
         [RelayCommand]
         private async Task ConnectToTinkoff()
         {
             if (string.IsNullOrWhiteSpace(ApiKey))
             {
-                await _dialogService.ShowAlertAsync("Ошибка", "Введите API ключ", "OK");
+                await _dialogService.ShowAlertAsync("Ошибка", "Введите API ключ Tinkoff Invest", "OK");
                 return;
             }
 
             IsLoading = true;
+            ConnectionStatus = "Подключение...";
 
             try
             {
@@ -56,20 +71,28 @@ namespace TabbedAppDemo.ViewModels
 
                 if (success)
                 {
-                    IsConnected = true;
+                    IsAuthenticated = true;
                     ConnectionStatus = "Подключено ✓";
-                    await _dialogService.ShowAlertAsync("Успех", "Подключение к Tinkoff API установлено", "OK");
+
+                    // Автоматически загружаем базовую информацию
+                    await LoadAccountInfo();
+
+                    await _dialogService.ShowAlertAsync("Успех",
+                        "Успешное подключение к Tinkoff Invest API", "OK");
                 }
                 else
                 {
                     ConnectionStatus = "Ошибка подключения";
-                    await _dialogService.ShowAlertAsync("Ошибка", "Не удалось подключиться к Tinkoff API", "OK");
+                    await _dialogService.ShowAlertAsync("Ошибка",
+                        "Не удалось подключиться к Tinkoff API", "OK");
                 }
             }
             catch (Exception ex)
             {
                 ConnectionStatus = "Ошибка";
-                await _dialogService.ShowAlertAsync("Ошибка", $"Ошибка подключения: {ex.Message}", "OK");
+                await _dialogService.ShowAlertAsync("Ошибка подключения",
+                    $"Ошибка: {ex.Message}\n\nПроверьте:\n1. Корректность API ключа\n2. Подключение к интернету\n3. Активность счёта Tinkoff Invest",
+                    "OK");
             }
             finally
             {
@@ -80,7 +103,13 @@ namespace TabbedAppDemo.ViewModels
         [RelayCommand]
         private async Task GetAccountInfo()
         {
-            if (!IsConnected)
+            await LoadAccountInfo();
+        }
+
+        [RelayCommand]
+        private async Task GetPortfolioInfo()
+        {
+            if (!IsAuthenticated)
             {
                 await _dialogService.ShowAlertAsync("Ошибка", "Сначала подключитесь к Tinkoff API", "OK");
                 return;
@@ -90,19 +119,38 @@ namespace TabbedAppDemo.ViewModels
 
             try
             {
-                var info = await _tinkoffService.GetAccountInfoAsync();
+                var portfolio = await _tinkoffService.GetPortfolioAsync();
 
-                AccountInfoText = $"Счёт: {info.BrokerAccountId}\n" +
-                                 $"Статус: {info.Status}\n" +
-                                 $"Баланс: {info.TotalBalance:C}\n" +
-                                 $"Обновлено: {info.LastUpdate:HH:mm:ss}";
+                TotalPortfolioValue = portfolio.TotalPortfolioValue;
+                ExpectedYield = portfolio.ExpectedYield;
 
-                await _dialogService.ShowAlertAsync("Информация о счёте", AccountInfoText, "OK");
+                PortfolioInfoText = $"Стоимость портфеля: {TotalPortfolioValue:C}\n" +
+                                   $"Ожидаемая доходность: {ExpectedYield:C}\n" +
+                                   $"Позиций: {portfolio.Positions.Count}\n" +
+                                   $"Валюта: {portfolio.Currency}";
+
+                // Показываем детали портфеля
+                if (portfolio.Positions.Any())
+                {
+                    var positionsText = string.Join("\n\n", portfolio.Positions.Select(p =>
+                        $"{p.Ticker} ({p.Name})\n" +
+                        $"Кол-во: {p.Balance}\n" +
+                        $"Ср. цена: {p.AveragePositionPrice:C}\n" +
+                        $"Текущая: {p.CurrentPrice:C}\n" +
+                        $"Доходность: {p.ExpectedYield:C}"));
+
+                    await _dialogService.ShowAlertAsync("Детали портфеля", positionsText, "OK");
+                }
+                else
+                {
+                    await _dialogService.ShowAlertAsync("Портфель", "Портфель пуст", "OK");
+                }
             }
             catch (Exception ex)
             {
-                AccountInfoText = "Ошибка загрузки информации";
-                await _dialogService.ShowAlertAsync("Ошибка", $"Не удалось получить информацию: {ex.Message}", "OK");
+                PortfolioInfoText = "Ошибка загрузки портфеля";
+                await _dialogService.ShowAlertAsync("Ошибка",
+                    $"Не удалось загрузить портфель: {ex.Message}", "OK");
             }
             finally
             {
@@ -111,12 +159,64 @@ namespace TabbedAppDemo.ViewModels
         }
 
         [RelayCommand]
-        private void ClearApiKey()
+        private void ClearConnection()
         {
+            _tinkoffService.Disconnect();
             ApiKey = "";
-            IsConnected = false;
+            IsAuthenticated = false;
             ConnectionStatus = "Не подключено";
             AccountInfoText = "Информация о счёте не загружена";
+            PortfolioInfoText = "Портфель не загружен";
+            TotalPortfolioValue = 0;
+            ExpectedYield = 0;
+        }
+
+        [RelayCommand]
+        private async Task ShowApiHelp()
+        {
+            await _dialogService.ShowAlertAsync("Как получить API ключ",
+                "1. Откройте приложение Tinkoff Инвестиции\n" +
+                "2. Перейдите в Настройки → Для разработчиков\n" +
+                "3. Нажмите 'Токен для OpenAPI'\n" +
+                "4. Скопируйте токен и вставьте в поле выше\n\n" +
+                "⚠️ Не делитесь токеном с посторонними!",
+                "Понятно");
+        }
+
+        private async Task LoadAccountInfo()
+        {
+            if (!IsAuthenticated) return;
+
+            IsLoading = true;
+
+            try
+            {
+                var info = await _tinkoffService.GetAccountInfoAsync();
+
+                AccountInfoText = $"Счёт: {info.BrokerAccountId}\n" +
+                                 $"Тип: {info.BrokerAccountType}\n" +
+                                 $"Статус: {info.Status}\n" +
+                                 $"Баланс: {info.TotalBalance:C}\n" +
+                                 $"Доходность: {info.ExpectedYield:C}\n" +
+                                 $"Всего счетов: {info.TotalAccounts}\n" +
+                                 $"Обновлено: {info.LastUpdate:HH:mm:ss}";
+
+                // Обновляем общие значения
+                TotalPortfolioValue = info.TotalBalance ?? 0;
+                ExpectedYield = info.ExpectedYield ?? 0;
+
+                await _dialogService.ShowAlertAsync("Информация о счёте", AccountInfoText, "OK");
+            }
+            catch (Exception ex)
+            {
+                AccountInfoText = "Ошибка загрузки информации";
+                await _dialogService.ShowAlertAsync("Ошибка",
+                    $"Не удалось получить информацию: {ex.Message}", "OK");
+            }
+            finally
+            {
+                IsLoading = false;
+            }
         }
     }
 }
