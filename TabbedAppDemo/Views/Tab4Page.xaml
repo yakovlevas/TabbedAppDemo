@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="TabbedAppDemo.Views.Tab4Page"
+             Title="Tinkoff API">
+
+    <!-- УБЕРИТЕ эту часть - ViewModel будет внедрена через DI -->
+    <!-- <ContentPage.BindingContext>
+        <viewmodels:Tab4ViewModel />
+    </ContentPage.BindingContext> -->
+
+    <ScrollView>
+        <VerticalStackLayout 
+            Spacing="20" 
+            Padding="25" 
+            VerticalOptions="Start">
+
+            <!-- Заголовок -->
+            <Label
+                Text="Tinkoff Invest API"
+                FontSize="28"
+                FontAttributes="Bold"
+                HorizontalOptions="Center"
+                Margin="0,0,0,20" />
+
+            <!-- Поле для API ключа -->
+            <Border 
+                Stroke="LightGray"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 10"
+                Padding="15">
+
+                <VerticalStackLayout Spacing="10">
+                    <Label 
+                        Text="API Key Tinkoff Invest" 
+                        FontSize="16" 
+                        FontAttributes="Bold" />
+
+                    <Entry 
+                        Text="{Binding ApiKey}"
+                        Placeholder="Введите ваш API ключ..."
+                        IsPassword="True"
+                        FontSize="14"
+                        HorizontalOptions="FillAndExpand" />
+
+                    <Label 
+                        Text="Статус подключения:" 
+                        FontSize="14" />
+
+                    <Label 
+                        Text="{Binding ConnectionStatus}"
+                        FontSize="14"
+                        TextColor="{Binding ConnectionColor}"
+                        FontAttributes="Bold" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Кнопки управления -->
+            <HorizontalStackLayout Spacing="15" HorizontalOptions="Center">
+                <Button 
+                    Text="Подключиться"
+                    Command="{Binding ConnectToTinkoffCommand}"
+                    Padding="25,12"
+                    BackgroundColor="#2196F3"
+                    TextColor="White"
+                    FontSize="16"
+                    CornerRadius="8"
+                    IsEnabled="{Binding CanConnect}" />
+
+                <Button 
+                    Text="Очистить"
+                    Command="{Binding ClearApiKeyCommand}"
+                    Padding="25,12"
+                    BackgroundColor="#9E9E9E"
+                    TextColor="White"
+                    FontSize="16"
+                    CornerRadius="8" />
+            </HorizontalStackLayout>
+
+            <!-- Индикатор загрузки -->
+            <ActivityIndicator 
+                IsRunning="{Binding IsLoading}"
+                IsVisible="{Binding IsLoading}"
+                Color="#2196F3"
+                HorizontalOptions="Center" />
+
+            <!-- Раздел информации о счёте -->
+            <Border 
+                Stroke="LightGray"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 10"
+                Padding="15"
+                IsVisible="{Binding IsConnected}">
+
+                <VerticalStackLayout Spacing="15">
+                    <Label 
+                        Text="Информация о брокерском счёте" 
+                        FontSize="18" 
+                        FontAttributes="Bold" />
+
+                    <Label 
+                        Text="{Binding AccountInfoText}"
+                        FontSize="14"
+                        LineBreakMode="WordWrap" />
+
+                    <Button 
+                        Text="Обновить информацию"
+                        Command="{Binding GetAccountInfoCommand}"
+                        Padding="20,10"
+                        BackgroundColor="#4CAF50"
+                        TextColor="White"
+                        FontSize="15"
+                        CornerRadius="8"
+                        HorizontalOptions="Center"
+                        IsEnabled="{Binding CanConnect}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Подсказка -->
+            <Border 
+                BackgroundColor="#FFF3E0"
+                Stroke="Orange"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 10"
+                Padding="15">
+
+                <VerticalStackLayout Spacing="5">
+                    <Label 
+                        Text="ℹ️ Как получить API ключ:" 
+                        FontSize="14" 
+                        FontAttributes="Bold"
+                        TextColor="#E65100" />
+
+                    <Label 
+                        Text="1. Откройте Tinkoff Invest\n2. Настройки → API\n3. Создайте новый токен\n4. Скопируйте ключ сюда"
+                        FontSize="12"
+                        TextColor="#5D4037" />
+                </VerticalStackLayout>
+            </Border>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

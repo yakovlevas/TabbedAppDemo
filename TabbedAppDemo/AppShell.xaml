@@ -19,7 +19,7 @@
             <ShellContent ContentTemplate="{DataTemplate views:Tab3Page}" />
         </Tab>
         <Tab Title="Tab 4" Icon="tab4.png">
-            <ShellContent ContentTemplate="{DataTemplate local:Tab4Page}" />
+            <ShellContent ContentTemplate="{DataTemplate views:Tab4Page}" />
         </Tab>
     </TabBar>
 </Shell>
