@@ -1,14 +1,45 @@
-﻿<?xml version = "1.0" encoding = "UTF-8" ?>
+﻿<?xml version="1.0" encoding="UTF-8" ?>
 <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:local="clr-namespace:TabbedAppDemo"
+             xmlns:converters="clr-namespace:TabbedAppDemo.Converters"
              x:Class="TabbedAppDemo.App">
+
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
-                <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
-            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Конвертер для инвертирования bool -->
+            <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+
+            <!-- Цвета (правильное объявление) -->
+            <Color x:Key="PrimaryColor">#512BD4</Color>
+            <Color x:Key="SecondaryColor">#DFD8F7</Color>
+            <Color x:Key="TertiaryColor">#2B0B98</Color>
+            <Color x:Key="SuccessColor">#28A745</Color>
+            <Color x:Key="InfoColor">#17A2B8</Color>
+            <Color x:Key="WarningColor">#FFC107</Color>
+            <Color x:Key="ErrorColor">#DC3545</Color>
+            <Color x:Key="WhiteColor">#FFFFFF</Color>
+            <Color x:Key="BlackColor">#000000</Color>
+            <Color x:Key="LightGrayColor">#F5F5F5</Color>
+            <Color x:Key="DarkGrayColor">#2C2C2C</Color>
+            <Color x:Key="GrayColor">#808080</Color>
+
+            <!-- Стили для текста -->
+            <Style TargetType="Label">
+                <Setter Property="TextColor" 
+                        Value="{AppThemeBinding Light={StaticResource BlackColor}, Dark={StaticResource WhiteColor}}" />
+            </Style>
+
+            <Style TargetType="Entry">
+                <Setter Property="TextColor" 
+                        Value="{AppThemeBinding Light={StaticResource BlackColor}, Dark={StaticResource WhiteColor}}" />
+                <Setter Property="PlaceholderColor" 
+                        Value="{AppThemeBinding Light={StaticResource GrayColor}, Dark={StaticResource LightGrayColor}}" />
+                <Setter Property="BackgroundColor" 
+                        Value="Transparent" />
+            </Style>
+
         </ResourceDictionary>
     </Application.Resources>
+
 </Application>

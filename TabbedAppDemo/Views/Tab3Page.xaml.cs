@@ -1,5 +1,4 @@
-using Microsoft.Maui.Controls;
-using TabbedAppDemo.ViewModels;
+﻿using TabbedAppDemo.ViewModels;
 
 namespace TabbedAppDemo.Views
 {
@@ -9,6 +8,21 @@ namespace TabbedAppDemo.Views
         {
             InitializeComponent();
             BindingContext = viewModel;
+        }
+
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
+
+            // При появлении страницы обновляем данные
+            if (BindingContext is Tab3ViewModel viewModel)
+            {
+                // Асинхронно проверяем подключение и загружаем портфель
+                Task.Run(async () =>
+                {
+                    await viewModel.CheckConnectionAndLoadPortfolioAsync();
+                });
+            }
         }
     }
 }

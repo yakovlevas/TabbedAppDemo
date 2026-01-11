@@ -1,100 +1,268 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:viewmodels="clr-namespace:TabbedAppDemo.ViewModels"
              x:Class="TabbedAppDemo.Views.Tab3Page"
-             Title="Tab3">
+             Title="Портфель">
 
-    <ContentPage.BindingContext>
-        <viewmodels:Tab3ViewModel />
-    </ContentPage.BindingContext>
-
-    <Grid RowDefinitions="Auto,*,Auto" Padding="10">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" 
+          Padding="10"
+          BackgroundColor="{AppThemeBinding Light=White, Dark=#1E1E1E}">
 
         <!-- Заголовок -->
         <Label 
             Text="{Binding Title}"
-            FontSize="28"
+            FontSize="24"
             FontAttributes="Bold"
             HorizontalOptions="Center"
-            Margin="0,20,0,20"
+            Margin="0,10"
+            TextColor="{AppThemeBinding Light=Black, Dark=White}"
             Grid.Row="0" />
 
-        <!-- Список элементов -->
-        <CollectionView 
-            ItemsSource="{Binding Items}"
-            SelectionMode="Single"
-            SelectedItem="{Binding SelectedItem}"
-            Grid.Row="1">
-
-            <CollectionView.ItemTemplate>
-                <DataTemplate>
-                    <Grid Padding="10" HeightRequest="60">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <Label 
-                            Text="{Binding .}"
-                            FontSize="16"
-                            VerticalOptions="Center"
-                            Grid.Column="0" />
-
-                        <Button 
-                            Text="Remove"
-                            Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:Tab3ViewModel}}, 
-                                     Path=RemoveItemCommand}"
-                            CommandParameter="{Binding .}"
-                            Padding="15,5"
-                            BackgroundColor="#FF5252"
-                            TextColor="White"
-                            FontSize="12"
-                            CornerRadius="5"
-                            Grid.Column="1"
-                            VerticalOptions="Center" />
-                    </Grid>
-                </DataTemplate>
-            </CollectionView.ItemTemplate>
-        </CollectionView>
-
-        <!-- Панель добавления нового элемента -->
-        <Border 
-            Stroke="LightGray"
-            StrokeThickness="1"
-            StrokeShape="RoundRectangle 10"
-            Padding="15"
-            Grid.Row="2"
-            Margin="0,10,0,10">
+        <!-- Карточка общей информации -->
+        <Frame Grid.Row="1"
+               Margin="0,0,0,15"
+               Padding="20"
+               CornerRadius="15"
+               BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2C2C2C}"
+               BorderColor="{AppThemeBinding Light=#E0E0E0, Dark=#404040}">
 
             <VerticalStackLayout Spacing="10">
-                <Label Text="Add New Item:" FontSize="16" FontAttributes="Bold" />
+                <!-- Общая стоимость -->
+                <VerticalStackLayout Spacing="5">
+                    <Label Text="Общая стоимость портфеля"
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                    <Label Text="{Binding TotalPortfolioValue, StringFormat='{0:C}'}"
+                           FontSize="28"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=Black, Dark=White}"/>
+                </VerticalStackLayout>
 
-                <HorizontalStackLayout Spacing="10">
-                    <Entry 
-                        Text="{Binding NewItemText}"
-                        Placeholder="Enter item name..."
-                        HorizontalOptions="FillAndExpand"
-                        FontSize="14" />
+                <!-- Доходность -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
+                    <VerticalStackLayout Spacing="5" Grid.Column="0">
+                        <Label Text="Доходность"
+                               FontSize="12"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                        <Label Text="{Binding TotalChangeText}"
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               TextColor="{Binding TotalChangeColor}"/>
+                    </VerticalStackLayout>
 
-                    <Button 
-                        Text="Add"
-                        Command="{Binding AddItemCommand}"
-                        Padding="20,10"
-                        BackgroundColor="#2196F3"
-                        TextColor="White"
-                        FontSize="14"
-                        CornerRadius="8" />
-                </HorizontalStackLayout>
-
-                <Label 
-                    Text="Tap on item to select, use Remove to delete"
-                    FontSize="12"
-                    TextColor="Gray"
-                    HorizontalOptions="Center" />
+                    <VerticalStackLayout Spacing="5" Grid.Column="1">
+                        <Label Text="За сегодня"
+                               FontSize="12"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                        <Label Text="{Binding DailyChangeText}"
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               TextColor="{Binding DailyChangeColor}"/>
+                    </VerticalStackLayout>
+                </Grid>
             </VerticalStackLayout>
 
-        </Border>
+        </Frame>
+
+        <!-- Кнопки управления -->
+        <Grid Grid.Row="2"
+              RowDefinitions="Auto,*"
+              Margin="0,0,0,10">
+
+            <!-- Кнопки действий -->
+            <HorizontalStackLayout Spacing="10" Grid.Row="0" Margin="0,0,0,15">
+                <Button Text="🔄 Обновить"
+                        Command="{Binding RefreshPortfolioCommand}"
+                        IsEnabled="{Binding IsConnected}"
+                        CornerRadius="10"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        FontSize="14"
+                        HorizontalOptions="FillAndExpand"/>
+
+                <Button Text="📊 Сводка"
+                        Command="{Binding ShowPortfolioSummaryCommand}"
+                        IsEnabled="{Binding IsConnected}"
+                        CornerRadius="10"
+                        BackgroundColor="{StaticResource Info}"
+                        TextColor="White"
+                        FontSize="14"
+                        HorizontalOptions="FillAndExpand"/>
+            </HorizontalStackLayout>
+
+            <!-- Список позиций -->
+            <RefreshView Grid.Row="1"
+                         IsRefreshing="{Binding IsLoading}"
+                         Command="{Binding RefreshPortfolioCommand}"
+                         IsEnabled="{Binding IsConnected}">
+
+                <CollectionView ItemsSource="{Binding PortfolioItems}"
+                                SelectionMode="None">
+
+                    <CollectionView.EmptyView>
+                        <VerticalStackLayout HorizontalOptions="Center"
+                                             VerticalOptions="Center"
+                                             Spacing="20"
+                                             Padding="40">
+                            <Label Text="📭"
+                                   FontSize="48"
+                                   HorizontalOptions="Center"/>
+                            <Label Text="Портфель пуст"
+                                   FontSize="18"
+                                   FontAttributes="Bold"
+                                   HorizontalOptions="Center"
+                                   TextColor="{AppThemeBinding Light=Black, Dark=White}"/>
+                            <Label Text="Подключитесь к Tinkoff API на вкладке 4 для загрузки данных"
+                                   FontSize="14"
+                                   HorizontalOptions="Center"
+                                   TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"
+                                   HorizontalTextAlignment="Center"/>
+                        </VerticalStackLayout>
+                    </CollectionView.EmptyView>
+
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Frame Padding="15"
+                                   Margin="0,0,0,10"
+                                   CornerRadius="12"
+                                   BackgroundColor="{AppThemeBinding Light=#F8F9FA, Dark=#2A2A2A}"
+                                   BorderColor="{AppThemeBinding Light=#E9ECEF, Dark=#3A3A3A}">
+
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      RowDefinitions="Auto,Auto,Auto"
+                                      ColumnSpacing="15"
+                                      RowSpacing="8">
+
+                                    <!-- Иконка -->
+                                    <Label Text="{Binding Icon}"
+                                           FontSize="24"
+                                           VerticalOptions="Center"
+                                           Grid.Column="0"
+                                           Grid.RowSpan="3"/>
+
+                                    <!-- Тикер и название -->
+                                    <VerticalStackLayout Grid.Column="1">
+                                        <Label Text="{Binding Ticker}"
+                                               FontSize="16"
+                                               FontAttributes="Bold"
+                                               TextColor="{AppThemeBinding Light=Black, Dark=White}"/>
+                                        <Label Text="{Binding Name}"
+                                               FontSize="12"
+                                               LineBreakMode="TailTruncation"
+                                               TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                                    </VerticalStackLayout>
+
+                                    <!-- Стоимость позиции -->
+                                    <Label Text="{Binding TotalValue, StringFormat='{0:C}'}"
+                                           FontSize="16"
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="End"
+                                           TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                                           Grid.Column="2"/>
+
+                                    <!-- Тип инструмента и количество -->
+                                    <HorizontalStackLayout Spacing="10" Grid.Row="1" Grid.Column="1">
+                                        <Frame Padding="5,2"
+                                               CornerRadius="5"
+                                               BackgroundColor="{AppThemeBinding Light=#E3F2FD, Dark=#0D47A1}">
+                                            <Label Text="{Binding InstrumentType}"
+                                                   FontSize="10"
+                                                   TextColor="{AppThemeBinding Light=#1565C0, Dark=#90CAF9}"/>
+                                        </Frame>
+                                        <Label Text="{Binding Quantity, StringFormat='{0:N2} шт'}"
+                                               FontSize="12"
+                                               TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                                    </HorizontalStackLayout>
+
+                                    <!-- Цены и изменения -->
+                                    <Grid ColumnDefinitions="*,*" 
+                                          Grid.Row="2" 
+                                          Grid.Column="1" 
+                                          Grid.ColumnSpan="2"
+                                          ColumnSpacing="10">
+
+                                        <!-- Текущая цена -->
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                            <Label Text="Текущая"
+                                                   FontSize="10"
+                                                   TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                                            <Label Text="{Binding CurrentPrice, StringFormat='{0:C}'}"
+                                                   FontSize="14"
+                                                   FontAttributes="Bold"
+                                                   TextColor="{AppThemeBinding Light=Black, Dark=White}"/>
+                                        </VerticalStackLayout>
+
+                                        <!-- Изменение -->
+                                        <VerticalStackLayout Grid.Column="1" Spacing="2" HorizontalOptions="End">
+                                            <Label Text="Изменение"
+                                                   FontSize="10"
+                                                   TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"/>
+                                            <Label Text="{Binding ChangeText}"
+                                                   FontSize="14"
+                                                   FontAttributes="Bold"
+                                                   TextColor="{Binding ChangeColor}"/>
+                                        </VerticalStackLayout>
+                                    </Grid>
+
+                                    <!-- Кнопка деталей -->
+                                    <Button Grid.Row="1" Grid.Column="2"
+                                            Text="📋"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, 
+                                                     Path=BindingContext.ShowPositionDetailsCommand}"
+                                            CommandParameter="{Binding .}"
+                                            Padding="10"
+                                            CornerRadius="8"
+                                            BackgroundColor="Transparent"
+                                            TextColor="{AppThemeBinding Light=#666666, Dark=#AAAAAA}"
+                                            BorderColor="{AppThemeBinding Light=#E0E0E0, Dark=#404040}"
+                                            BorderWidth="1"
+                                            FontSize="14"
+                                            HeightRequest="35"
+                                            WidthRequest="35"/>
+
+                                </Grid>
+
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </RefreshView>
+
+        </Grid>
+
+        <!-- Статус подключения -->
+        <Frame Grid.Row="3"
+               Padding="15"
+               CornerRadius="10"
+               IsVisible="{Binding IsConnected, Converter={StaticResource InverseBooleanConverter}}"
+               BackgroundColor="{StaticResource Warning}"
+               BorderColor="#FFA000">
+
+            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                <Label Text="⚠️"
+                       FontSize="16"
+                       VerticalOptions="Center"/>
+                <Label Text="Не подключено к Tinkoff API"
+                       FontSize="14"
+                       FontAttributes="Bold"
+                       TextColor="Black"
+                       VerticalOptions="Center"/>
+                <Label Text="Перейдите на вкладку 4 для подключения"
+                       FontSize="12"
+                       TextColor="Black"
+                       VerticalOptions="Center"/>
+            </HorizontalStackLayout>
+        </Frame>
+
+        <!-- Индикатор загрузки -->
+        <ActivityIndicator Grid.Row="1" Grid.RowSpan="3"
+                           IsRunning="{Binding IsLoading}"
+                           IsVisible="{Binding IsLoading}"
+                           Color="{StaticResource Primary}"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           Scale="1.5"/>
 
     </Grid>
+
 </ContentPage>

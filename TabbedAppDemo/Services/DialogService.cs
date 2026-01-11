@@ -31,23 +31,24 @@ namespace TabbedAppDemo.Services
             return false;
         }
 
-        public async Task<string> ShowPromptAsync(string title, string message, string accept, string cancel, string placeholder = null, string initialValue = null)
+        public async Task ShowErrorAsync(string message, string title = "Ошибка")
         {
-            if (Application.Current?.MainPage != null)
-            {
-                return await MainThread.InvokeOnMainThreadAsync(() =>
-                    Application.Current.MainPage.DisplayPromptAsync(
-                        title,
-                        message,
-                        accept,
-                        cancel,
-                        placeholder,
-                        maxLength: 500,
-                        keyboard: Microsoft.Maui.Keyboard.Default,
-                        initialValue: initialValue));
-            }
+            await ShowAlertAsync(title, $"❌ {message}", "OK");
+        }
 
-            return null;
+        public async Task ShowSuccessAsync(string message, string title = "Успех")
+        {
+            await ShowAlertAsync(title, $"✅ {message}", "OK");
+        }
+
+        public async Task ShowWarningAsync(string message, string title = "Внимание")
+        {
+            await ShowAlertAsync(title, $"⚠️ {message}", "OK");
+        }
+
+        public async Task ShowInfoAsync(string message, string title = "Информация")
+        {
+            await ShowAlertAsync(title, $"ℹ️ {message}", "OK");
         }
 
         public async Task ShowToastAsync(string message, int durationSeconds = 3)
@@ -64,21 +65,6 @@ namespace TabbedAppDemo.Services
             {
                 Console.WriteLine($"Toast error: {ex.Message}");
             }
-        }
-
-        public async Task<string> ShowActionSheetAsync(string title, string cancel, string destruction, params string[] buttons)
-        {
-            if (Application.Current?.MainPage != null)
-            {
-                return await MainThread.InvokeOnMainThreadAsync(() =>
-                    Application.Current.MainPage.DisplayActionSheet(
-                        title,
-                        cancel,
-                        destruction,
-                        buttons));
-            }
-
-            return null;
         }
     }
 }
