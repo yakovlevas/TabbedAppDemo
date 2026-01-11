@@ -7,7 +7,6 @@ namespace TabbedAppDemo.Views
         public Tab1Page()
         {
             InitializeComponent();
-            // Больше нет логики здесь - все в ViewModel!
         }
     }
 }

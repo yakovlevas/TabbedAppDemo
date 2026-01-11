@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:TabbedAppDemo.ViewModels"
+             x:Class="TabbedAppDemo.Views.Tab2Page"
+             Title="Tab2">
+
+    <ContentPage.BindingContext>
+        <viewmodels:Tab2ViewModel />
+    </ContentPage.BindingContext>
+
+    <ScrollView>
+        <VerticalStackLayout 
+            Spacing="20" 
+            Padding="30,20" 
+            VerticalOptions="Start">
+
+            <Label
+                Text="{Binding Title}"
+                FontSize="28"
+                FontAttributes="Bold"
+                HorizontalOptions="Center" />
+
+            <Label
+                Text="{Binding Description}"
+                FontSize="16"
+                HorizontalOptions="Center"
+                Margin="0,0,0,20" />
+
+            <!-- Slider -->
+            <Label Text="Slider Value:" FontSize="16" />
+            <Slider 
+                Value="{Binding SliderValue}"
+                Minimum="0"
+                Maximum="100"
+                Margin="0,0,0,10" />
+            <Label 
+                Text="{Binding SliderValue, StringFormat='Value: {0:F0}'}"
+                FontSize="14"
+                HorizontalOptions="Center" />
+
+            <!-- Toggle Switch -->
+            <HorizontalStackLayout Spacing="10" Margin="0,20,0,10">
+                <Label Text="Toggle Switch:" FontSize="16" VerticalOptions="Center" />
+                <Switch 
+                    IsToggled="{Binding IsToggleOn}"
+                    VerticalOptions="Center" />
+                <Label 
+                    Text="{Binding IsToggleOn, StringFormat='State: {0}'}"
+                    FontSize="14"
+                    VerticalOptions="Center" />
+            </HorizontalStackLayout>
+
+            <!-- Date Picker -->
+            <Label Text="Select Date:" FontSize="16" Margin="0,20,0,5" />
+            <DatePicker
+                Date="{Binding SelectedDate}"
+                Format="D"
+                Margin="0,0,0,20" />
+
+            <!-- Кнопки действий -->
+            <Button 
+                Text="Show Current Values"
+                Command="{Binding ShowTab2MessageCommand}"
+                HorizontalOptions="Fill"
+                Padding="20,12"
+                BackgroundColor="#4CAF50"
+                TextColor="White"
+                FontSize="16"
+                CornerRadius="8"
+                Margin="0,10" />
+
+            <Button 
+                Text="Reset All Values"
+                Command="{Binding ResetValuesCommand}"
+                HorizontalOptions="Fill"
+                Padding="20,12"
+                BackgroundColor="#F44336"
+                TextColor="White"
+                FontSize="16"
+                CornerRadius="8" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

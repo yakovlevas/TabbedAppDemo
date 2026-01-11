@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:TabbedAppDemo.ViewModels"
+             x:Class="TabbedAppDemo.Views.Tab3Page"
+             Title="Tab3">
+
+    <ContentPage.BindingContext>
+        <viewmodels:Tab3ViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="10">
+
+        <!-- Заголовок -->
+        <Label 
+            Text="{Binding Title}"
+            FontSize="28"
+            FontAttributes="Bold"
+            HorizontalOptions="Center"
+            Margin="0,20,0,20"
+            Grid.Row="0" />
+
+        <!-- Список элементов -->
+        <CollectionView 
+            ItemsSource="{Binding Items}"
+            SelectionMode="Single"
+            SelectedItem="{Binding SelectedItem}"
+            Grid.Row="1">
+
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="10" HeightRequest="60">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Label 
+                            Text="{Binding .}"
+                            FontSize="16"
+                            VerticalOptions="Center"
+                            Grid.Column="0" />
+
+                        <Button 
+                            Text="Remove"
+                            Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodels:Tab3ViewModel}}, 
+                                     Path=RemoveItemCommand}"
+                            CommandParameter="{Binding .}"
+                            Padding="15,5"
+                            BackgroundColor="#FF5252"
+                            TextColor="White"
+                            FontSize="12"
+                            CornerRadius="5"
+                            Grid.Column="1"
+                            VerticalOptions="Center" />
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Панель добавления нового элемента -->
+        <Border 
+            Stroke="LightGray"
+            StrokeThickness="1"
+            StrokeShape="RoundRectangle 10"
+            Padding="15"
+            Grid.Row="2"
+            Margin="0,10,0,10">
+
+            <VerticalStackLayout Spacing="10">
+                <Label Text="Add New Item:" FontSize="16" FontAttributes="Bold" />
+
+                <HorizontalStackLayout Spacing="10">
+                    <Entry 
+                        Text="{Binding NewItemText}"
+                        Placeholder="Enter item name..."
+                        HorizontalOptions="FillAndExpand"
+                        FontSize="14" />
+
+                    <Button 
+                        Text="Add"
+                        Command="{Binding AddItemCommand}"
+                        Padding="20,10"
+                        BackgroundColor="#2196F3"
+                        TextColor="White"
+                        FontSize="14"
+                        CornerRadius="8" />
+                </HorizontalStackLayout>
+
+                <Label 
+                    Text="Tap on item to select, use Remove to delete"
+                    FontSize="12"
+                    TextColor="Gray"
+                    HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+        </Border>
+
+    </Grid>
+</ContentPage>

@@ -13,10 +13,10 @@
             <ShellContent ContentTemplate="{DataTemplate views:Tab1Page}" />
         </Tab>
         <Tab Title="Tab 2" Icon="tab2.png">
-            <ShellContent ContentTemplate="{DataTemplate local:Tab2Page}" />
+            <ShellContent ContentTemplate="{DataTemplate views:Tab2Page}" />
         </Tab>
         <Tab Title="Tab 3" Icon="tab3.png">
-            <ShellContent ContentTemplate="{DataTemplate local:Tab3Page}" />
+            <ShellContent ContentTemplate="{DataTemplate views:Tab3Page}" />
         </Tab>
         <Tab Title="Tab 4" Icon="tab4.png">
             <ShellContent ContentTemplate="{DataTemplate local:Tab4Page}" />
