@@ -1,188 +1,154 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:converters="clr-namespace:TabbedAppDemo.Converters"
              x:Class="TabbedAppDemo.Views.Tab4Page"
-             Title="Tinkoff Invest">
-
-    <ContentPage.Resources>
-        <converters:BoolToColorConverter x:Key="BoolToColorConverter" />
-        <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
-    </ContentPage.Resources>
+             Title="Tab4">
 
     <ScrollView>
-        <VerticalStackLayout 
-            Spacing="20" 
-            Padding="20" 
-            VerticalOptions="Start">
+        <VerticalStackLayout Spacing="20" Padding="20">
 
             <!-- Заголовок -->
-            <Label
-                Text="Tinkoff Invest API"
-                FontSize="28"
-                FontAttributes="Bold"
-                HorizontalOptions="Center"
-                Margin="0,0,0,10" />
+            <Label Text="Tinkoff Invest API" 
+                   FontSize="24" 
+                   FontAttributes="Bold" 
+                   HorizontalOptions="Center"
+                   TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"/>
 
             <!-- Поле для API ключа -->
-            <Frame BorderColor="LightGray" CornerRadius="10" Padding="15">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource LightGray}, Dark={StaticResource DarkGray}}"
+                   Padding="15"
+                   CornerRadius="10">
                 <VerticalStackLayout Spacing="10">
-                    <HorizontalStackLayout>
-                        <Label 
-                            Text="API ключ Tinkoff" 
-                            FontSize="16" 
-                            FontAttributes="Bold"
-                            VerticalOptions="Center" />
-                        <Button 
-                            Text="?"
+                    <Label Text="API Ключ Tinkoff Invest:" 
+                           TextColor="Black"
+                           BackgroundColor="LightGray"
+                           Padding="10"/>
+
+                    <Entry Text="{Binding ApiKey}" 
+                           Placeholder="Введите ваш API ключ..."
+                           IsPassword="True"
+                           BackgroundColor="Transparent"
+                           TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"
+                           PlaceholderColor="Gray"/>
+
+                    <Button Text="❓ Как получить API ключ" 
                             Command="{Binding ShowApiHelpCommand}"
-                            Padding="10,5"
-                            BackgroundColor="Transparent"
-                            TextColor="#2196F3"
-                            FontSize="14"
-                            FontAttributes="Bold"
-                            CornerRadius="15"
-                            Margin="10,0,0,0" />
-                    </HorizontalStackLayout>
-
-                    <Entry 
-                        Text="{Binding ApiKey}"
-                        Placeholder="Введите ваш API токен..."
-                        IsPassword="True"
-                        FontSize="14"
-                        HorizontalOptions="FillAndExpand"
-                        IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBoolConverter}}" />
-
-                    <Label 
-                        Text="Статус:" 
-                        FontSize="14" />
-
-                    <Label 
-                        Text="{Binding ConnectionStatus}"
-                        FontSize="14"
-                        TextColor="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"
-                        FontAttributes="Bold" />
+                            BackgroundColor="Gray"
+                            TextColor="White"/>
                 </VerticalStackLayout>
+            </Frame>
+
+            <!-- Статус подключения -->
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource LightGray}, Dark={StaticResource DarkGray}}"
+                   Padding="15"
+                   CornerRadius="10">
+                <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                    <!-- Круг статуса -->
+                    <Frame WidthRequest="20" 
+                           HeightRequest="20" 
+                           CornerRadius="10" 
+                           Padding="0"
+                           BackgroundColor="{Binding ConnectionColor}"/>
+
+                    <!-- Текст статуса -->
+                    <Label Text="{Binding ConnectionStatus}" 
+                           TextColor="Black"
+                           BackgroundColor="LightGray"
+                           Padding="10"
+                           VerticalTextAlignment="Center"/>
+                </HorizontalStackLayout>
             </Frame>
 
             <!-- Кнопки управления подключением -->
-            <HorizontalStackLayout Spacing="15" HorizontalOptions="Center">
-                <Button 
-                    Text="Подключиться"
-                    Command="{Binding ConnectToTinkoffCommand}"
-                    Padding="25,12"
-                    BackgroundColor="#2196F3"
-                    TextColor="White"
-                    FontSize="16"
-                    CornerRadius="8"
-                    IsEnabled="{Binding CanConnect}" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Button Text="🔗 Подключиться" 
+                        Command="{Binding ConnectToTinkoffCommand}"
+                        IsEnabled="{Binding CanConnect}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        Grid.Column="0"/>
 
-                <Button 
-                    Text="Отключиться"
-                    Command="{Binding ClearConnectionCommand}"
-                    Padding="25,12"
-                    BackgroundColor="#9E9E9E"
-                    TextColor="White"
-                    FontSize="16"
-                    CornerRadius="8"
-                    IsEnabled="{Binding IsConnected}" />
-            </HorizontalStackLayout>
-
-            <!-- Индикатор загрузки -->
-            <ActivityIndicator 
-                IsRunning="{Binding IsLoading}"
-                IsVisible="{Binding IsLoading}"
-                Color="#2196F3"
-                HorizontalOptions="Center"
-                HeightRequest="40" />
-
-            <!-- Информация о счете -->
-            <Frame BorderColor="LightGray" CornerRadius="10" Padding="15"
-                   IsVisible="{Binding IsConnected}">
-                <VerticalStackLayout Spacing="15">
-                    <Label 
-                        Text="Информация о брокерском счете" 
-                        FontSize="18" 
-                        FontAttributes="Bold" />
-
-                    <Label 
-                        Text="{Binding AccountInfoText}"
-                        FontSize="14"
-                        LineBreakMode="WordWrap" />
-
-                    <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
-                        <Button 
-                            Text="Обновить счёт"
-                            Command="{Binding GetAccountInfoCommand}"
-                            Padding="20,10"
-                            BackgroundColor="#4CAF50"
-                            TextColor="White"
-                            FontSize="14"
-                            CornerRadius="8"
-                            IsEnabled="{Binding CanGetInfo}" />
-
-                        <Button 
-                            Text="Портфель"
-                            Command="{Binding GetPortfolioInfoCommand}"
-                            Padding="20,10"
-                            BackgroundColor="#FF9800"
-                            TextColor="White"
-                            FontSize="14"
-                            CornerRadius="8"
-                            IsEnabled="{Binding CanGetInfo}" />
-                    </HorizontalStackLayout>
-                </VerticalStackLayout>
-            </Frame>
-
-            <!-- Сводная информация -->
-            <Grid IsVisible="{Binding IsConnected}" 
-                  ColumnDefinitions="*,*" 
-                  RowDefinitions="Auto,Auto"
-                  ColumnSpacing="10"
-                  RowSpacing="10">
-
-                <Frame Grid.Row="0" Grid.Column="0" CornerRadius="8" Padding="10"
-                       BackgroundColor="#E8F5E9">
-                    <VerticalStackLayout Spacing="5">
-                        <Label Text="Стоимость портфеля" FontSize="12" TextColor="#388E3C" />
-                        <Label Text="{Binding TotalPortfolioValue, StringFormat='{0:C}'}" 
-                               FontSize="18" FontAttributes="Bold" TextColor="#1B5E20" />
-                    </VerticalStackLayout>
-                </Frame>
-
-                <Frame Grid.Row="0" Grid.Column="1" CornerRadius="8" Padding="10"
-                       BackgroundColor="#FFF3E0">
-                    <VerticalStackLayout Spacing="5">
-                        <Label Text="Ожидаемая доходность" FontSize="12" TextColor="#F57C00" />
-                        <Label Text="{Binding ExpectedYield, StringFormat='{0:C}'}" 
-                               FontSize="18" FontAttributes="Bold" TextColor="#E65100" />
-                    </VerticalStackLayout>
-                </Frame>
-
-                <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                       Text="{Binding PortfolioInfoText}"
-                       FontSize="12"
-                       TextColor="Gray"
-                       HorizontalOptions="Center" />
+                <Button Text="🗑️ Отключиться" 
+                        Command="{Binding ClearConnectionCommand}"
+                        IsEnabled="{Binding IsConnected}"
+                        BackgroundColor="{StaticResource Error}"
+                        TextColor="White"
+                        Grid.Column="1"/>
             </Grid>
 
-            <!-- Предупреждение -->
-            <Frame BackgroundColor="#FFF3E0" BorderColor="Orange" CornerRadius="10" Padding="15">
-                <VerticalStackLayout Spacing="5">
-                    <Label 
-                        Text="⚠️ Важная информация" 
-                        FontSize="14" 
-                        FontAttributes="Bold"
-                        TextColor="#E65100" />
+            <!-- Кнопки для сохраненного токена -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10" 
+                  IsVisible="{Binding HasSavedToken}">
+                <Button Text="📱 Использовать сохраненный" 
+                        Command="{Binding UseSavedTokenCommand}"
+                        BackgroundColor="{StaticResource Success}"
+                        TextColor="White"
+                        Grid.Column="0"/>
 
-                    <Label 
-                        Text="• Используйте только свои API ключи\n• Не храните ключи в коде\n• Реальные транзакции требуют подтверждения\n• Данные обновляются с задержкой"
-                        FontSize="12"
-                        TextColor="#5D4037"
-                        LineBreakMode="WordWrap" />
+                <Button Text="🗑️ Удалить сохраненный" 
+                        Command="{Binding ClearSavedTokenCommand}"
+                        BackgroundColor="{StaticResource Warning}"
+                        TextColor="Black"
+                        Grid.Column="1"/>
+            </Grid>
+
+            <!-- Информация о счете -->
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource LightGray}, Dark={StaticResource DarkGray}}"
+                   Padding="15"
+                   CornerRadius="10">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Информация о брокерском счете:" 
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"/>
+
+                    <Label Text="{Binding AccountInfoText}" 
+                            TextColor="Black" 
+                            BackgroundColor="LightGray"
+                            Padding="10"/>
+                    <Button Text="🔄 Обновить информацию" 
+                            Command="{Binding GetAccountInfoCommand}"
+                            IsEnabled="{Binding CanGetInfo}"
+                            BackgroundColor="{StaticResource Info}"
+                            TextColor="White"
+                            HorizontalOptions="End"/>
                 </VerticalStackLayout>
             </Frame>
+
+            <!-- Информация о портфеле -->
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource LightGray}, Dark={StaticResource DarkGray}}"
+                   Padding="15"
+                   CornerRadius="10">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Информация о портфеле:" 
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light={StaticResource Black}, Dark={StaticResource White}}"/>
+
+                    <Label Text="{Binding PortfolioInfoText}" 
+                           TextColor="Black"
+                           BackgroundColor="LightGray"
+                           Padding="10"/>
+                    <Button Text="📊 Загрузить портфель" 
+                            Command="{Binding GetPortfolioInfoCommand}"
+                            IsEnabled="{Binding CanGetInfo}"
+                            BackgroundColor="{StaticResource Info}"
+                            TextColor="White"
+                            HorizontalOptions="End"/>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Индикатор загрузки -->
+            <ActivityIndicator IsRunning="{Binding IsLoading}" 
+                               IsVisible="{Binding IsLoading}"
+                               Color="{StaticResource Primary}"
+                               HorizontalOptions="Center"/>
+
+            <!-- Проверка сохраненного токена -->
+            <ActivityIndicator IsRunning="{Binding IsCheckingSavedToken}" 
+                               IsVisible="{Binding IsCheckingSavedToken}"
+                               Color="{StaticResource Primary}"
+                               HorizontalOptions="Center"/>
 
         </VerticalStackLayout>
     </ScrollView>
+
 </ContentPage>
