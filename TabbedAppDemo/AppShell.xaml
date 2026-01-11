@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="TabbedAppDemo.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:TabbedAppDemo"
+    Shell.FlyoutBehavior="Disabled"
+    Shell.NavBarIsVisible="False">
+
+    <TabBar>
+        <Tab Title="Tab 1" Icon="tab1.png">
+            <ShellContent ContentTemplate="{DataTemplate local:Tab1Page}" />
+        </Tab>
+        <Tab Title="Tab 2" Icon="tab2.png">
+            <ShellContent ContentTemplate="{DataTemplate local:Tab2Page}" />
+        </Tab>
+        <Tab Title="Tab 3" Icon="tab3.png">
+            <ShellContent ContentTemplate="{DataTemplate local:Tab3Page}" />
+        </Tab>
+        <Tab Title="Tab 4" Icon="tab4.png">
+            <ShellContent ContentTemplate="{DataTemplate local:Tab4Page}" />
+        </Tab>
+    </TabBar>
+</Shell>
