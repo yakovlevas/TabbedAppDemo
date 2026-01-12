@@ -40,7 +40,114 @@ namespace TabbedAppDemo.Services
             };
             _httpClient.DefaultRequestHeaders.Add("accept", "application/json");
         }
+        // Добавить этот метод в класс TinkoffApiService
+        public async Task<List<Operation>> GetOperationsAsync(DateTime from, DateTime to,
+                                                            string accountId = null,
+                                                            int page = 1,
+                                                            int pageSize = 100)
+        {
+            EnsureConnected();
 
+            try
+            {
+                var targetAccountId = accountId ?? _currentAccountId;
+
+                var request = new
+                {
+                    accountId = targetAccountId,
+                    from = FormatDate(from),
+                    to = FormatDate(to),
+                    state = "OPERATION_STATE_EXECUTED"
+                };
+
+                var response = await SendRequest<GetOperationsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
+                    request);
+
+                if (response?.Operations == null || !response.Operations.Any())
+                {
+                    return new List<Operation>();
+                }
+
+                // Применяем пагинацию на стороне клиента
+                var paginatedOperations = response.Operations
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                // Преобразуем операции API в нашу модель
+                var operations = new List<Operation>();
+
+                foreach (var apiOperation in paginatedOperations)
+                {
+                    var operation = await ConvertApiOperationToModel(apiOperation);
+                    if (operation != null)
+                    {
+                        operations.Add(operation);
+                    }
+                }
+
+                return operations.OrderByDescending(o => o.Date).ToList();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
+            }
+        }
+        // Добавить этот метод в класс TinkoffApiService (в конец класса перед #endregion):
+        public async Task<List<Operation>> GetOperationsWithPaginationAsync(DateTime from, DateTime to,
+                                                                          string accountId = null,
+                                                                          int page = 1,
+                                                                          int pageSize = 100)
+        {
+            EnsureConnected();
+
+            try
+            {
+                var targetAccountId = accountId ?? _currentAccountId;
+
+                var request = new
+                {
+                    accountId = targetAccountId,
+                    from = FormatDate(from),
+                    to = FormatDate(to),
+                    state = "OPERATION_STATE_EXECUTED"
+                };
+
+                var response = await SendRequest<GetOperationsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
+                    request);
+
+                if (response?.Operations == null || !response.Operations.Any())
+                {
+                    return new List<Operation>();
+                }
+
+                // Применяем пагинацию на стороне клиента
+                var paginatedOperations = response.Operations
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                // Преобразуем операции API в нашу модель
+                var operations = new List<Operation>();
+
+                foreach (var apiOperation in paginatedOperations)
+                {
+                    var operation = await ConvertApiOperationToModel(apiOperation);
+                    if (operation != null)
+                    {
+                        operations.Add(operation);
+                    }
+                }
+
+                return operations.OrderByDescending(o => o.Date).ToList();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
+            }
+        }
         public async Task<bool> ConnectAsync(string apiKey)
         {
             try

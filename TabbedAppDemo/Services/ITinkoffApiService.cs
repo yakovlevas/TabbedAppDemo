@@ -19,8 +19,14 @@ namespace TabbedAppDemo.Services
         Task<bool> HasSavedToken();
         Task ClearSavedToken();
 
-        // Метод для получения операций
+        // Метод для получения операций (основной, без пагинации)
         Task<List<Operation>> GetOperationsAsync(DateTime from, DateTime to, string accountId = null);
+
+        // Новый метод для получения операций с пагинацией
+        Task<List<Operation>> GetOperationsWithPaginationAsync(DateTime from, DateTime to,
+                                                              string accountId = null,
+                                                              int page = 1,
+                                                              int pageSize = 100);
     }
 
     public class AccountInfo
