@@ -10,5 +10,27 @@ namespace TabbedAppDemo.Views
             InitializeComponent();
             BindingContext = viewModel;
         }
+
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
+
+            // Вызываем метод OnAppearing во ViewModel
+            if (BindingContext is Tab4ViewModel viewModel)
+            {
+                viewModel.OnAppearing();
+            }
+        }
+
+        protected override void OnDisappearing()
+        {
+            base.OnDisappearing();
+
+            // Вызываем метод OnDisappearing во ViewModel
+            if (BindingContext is Tab4ViewModel viewModel)
+            {
+                viewModel.OnDisappearing();
+            }
+        }
     }
 }

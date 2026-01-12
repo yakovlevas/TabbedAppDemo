@@ -9,6 +9,7 @@ namespace TabbedAppDemo.ViewModels
     {
         private readonly ITinkoffApiService _tinkoffService;
         private readonly IDialogService _dialogService;
+        private bool _isPageActive = false;
 
         [ObservableProperty]
         private string _title = "📊 Мой Портфель";
@@ -19,7 +20,7 @@ namespace TabbedAppDemo.ViewModels
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(ConnectionStatusText))]
         [NotifyPropertyChangedFor(nameof(ConnectionStatusColor))]
-        private bool _isConnected = false;
+        private bool _isConnected = false; // Явная инициализация
 
         [ObservableProperty]
         private decimal _totalPortfolioValue;
@@ -56,36 +57,58 @@ namespace TabbedAppDemo.ViewModels
             _tinkoffService = tinkoffService;
             _dialogService = dialogService;
 
-            // Загружаем портфель при создании ViewModel
-            InitializeAsync();
+            // НЕ загружаем портфель при создании ViewModel!
+            // Пусть пользователь сделает это явно
+            //Debug.WriteLine("[Tab3ViewModel] Конструктор вызван");
         }
 
-        private async void InitializeAsync()
+        // Метод для вызова при появлении страницы
+        public void OnAppearing()
         {
-            // Проверяем подключение и загружаем портфель
-            await CheckConnectionAndLoadPortfolioAsync();
+            _isPageActive = true;
+           // Debug.WriteLine("[Tab3ViewModel] OnAppearing: страница активна");
+        }
+
+        // Метод для вызова при скрытии страницы
+        public void OnDisappearing()
+        {
+            _isPageActive = false;
+           // Debug.WriteLine("[Tab3ViewModel] OnDisappearing: страница неактивна");
         }
 
         public async Task CheckConnectionAndLoadPortfolioAsync()
         {
             try
             {
+                //Debug.WriteLine("[Tab3ViewModel] Проверка подключения...");
+
+                // Проверяем подключение через сервис
                 IsConnected = await _tinkoffService.IsConnected();
-                if (IsConnected)
+                //Debug.WriteLine($"[Tab3ViewModel] Состояние подключения: {IsConnected}");
+
+                if (IsConnected && _isPageActive)
                 {
                     await LoadPortfolio();
                 }
             }
             catch (Exception ex)
             {
-                await _dialogService.ShowAlertAsync("Ошибка", $"Ошибка инициализации портфеля: {ex.Message}", "OK");
+                //Debug.WriteLine($"[Tab3ViewModel] Ошибка проверки подключения: {ex.Message}");
+                IsConnected = false;
             }
         }
 
         [RelayCommand]
         private async Task LoadPortfolio()
         {
-            if (!IsConnected)
+            if (!_isPageActive)
+            {
+                //Debug.WriteLine("[Tab3ViewModel] Страница неактивна, пропускаем загрузку");
+                return;
+            }
+
+            // Проверяем подключение перед загрузкой
+            if (!await CheckConnectionAsync())
             {
                 await _dialogService.ShowAlertAsync("Ошибка",
                     "Сначала подключитесь к Tinkoff API на вкладке 4", "OK");
@@ -117,6 +140,18 @@ namespace TabbedAppDemo.ViewModels
             finally
             {
                 IsLoading = false;
+            }
+        }
+
+        private async Task<bool> CheckConnectionAsync()
+        {
+            try
+            {
+                return await _tinkoffService.IsConnected();
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -200,7 +235,7 @@ namespace TabbedAppDemo.ViewModels
         {
             TotalPortfolioValue = portfolio.TotalPortfolioValue;
 
-            // Рассчитываем изменения (в реальном API эти данные приходят)
+            // Рассчитываем изменения
             var random = new Random();
             TotalProfitLoss = TotalPortfolioValue * (decimal)(random.NextDouble() * 0.1 - 0.05);
             TotalChangePercent = TotalPortfolioValue > 0 ? (TotalProfitLoss / TotalPortfolioValue) * 100 : 0;
@@ -233,11 +268,11 @@ namespace TabbedAppDemo.ViewModels
                     DailyChange = dailyChange,
                     TotalValue = positionValue,
                     Icon = GetInstrumentIcon(position.InstrumentType),
-                    Currency = "RUB" // По умолчанию рубль, если в PortfolioPosition нет поля Currency
+                    Currency = "RUB"
                 });
             }
 
-            // Сортируем по стоимости позиции (от большей к меньшей)
+            // Сортируем по стоимости позиции
             PortfolioItems = new ObservableCollection<PortfolioItemViewModel>(
                 PortfolioItems.OrderByDescending(p => p.TotalValue));
         }
@@ -270,11 +305,14 @@ namespace TabbedAppDemo.ViewModels
             };
         }
 
-        // Метод для обновления подключения (вызывается из Tab4 при успешном подключении)
+        // Метод для обновления подключения
         public async Task OnTinkoffConnected()
         {
             IsConnected = true;
-            await LoadPortfolio();
+            if (_isPageActive)
+            {
+                await LoadPortfolio();
+            }
         }
 
         // Метод для обновления при отключении

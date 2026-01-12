@@ -5,7 +5,7 @@ namespace TabbedAppDemo.Services
 {
     public class SimpleConnectionStateService : IConnectionStateService
     {
-        private bool _isConnected;
+        private bool _isConnected = false; // Явно инициализируем как false
         private readonly object _lock = new object();
 
         public bool IsConnected
@@ -33,31 +33,26 @@ namespace TabbedAppDemo.Services
             if (IsConnected == isConnected)
                 return;
 
+            Console.WriteLine($"[ConnectionStateService] Изменение статуса: {IsConnected} -> {isConnected}");
             IsConnected = isConnected;
 
             // Вызываем событие безопасно
             var handler = ConnectionChanged;
             if (handler != null)
             {
-                try
+                // Используем Device.BeginInvokeOnMainThread для MAUI
+                Microsoft.Maui.Controls.Device.BeginInvokeOnMainThread(() =>
                 {
-                    // Используем Device.BeginInvokeOnMainThread для MAUI
-                    Microsoft.Maui.Controls.Device.BeginInvokeOnMainThread(() =>
+                    try
                     {
-                        try
-                        {
-                            handler.Invoke(this, isConnected);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Ошибка при вызове обработчика: {ex.Message}");
-                        }
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Ошибка при планировании события: {ex.Message}");
-                }
+                        Console.WriteLine($"[ConnectionStateService] Вызываем ConnectionChanged: {isConnected}");
+                        handler.Invoke(this, isConnected);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Ошибка при вызове обработчика: {ex.Message}");
+                    }
+                });
             }
 
             await Task.CompletedTask;

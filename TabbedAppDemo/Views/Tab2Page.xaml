@@ -291,6 +291,7 @@
                         <!-- Сделки за день -->
                         <VerticalStackLayout Spacing="5">
                             <CollectionView ItemsSource="{Binding Operations}"
+                                            IsVisible="{Binding HasOperations}"
                                             SelectionMode="None">
 
                                 <CollectionView.ItemTemplate>

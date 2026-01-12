@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TabbedAppDemo.Services;
+using System.Diagnostics;
 
 namespace TabbedAppDemo.ViewModels
 {
@@ -9,50 +10,42 @@ namespace TabbedAppDemo.ViewModels
         private readonly ITinkoffApiService _tinkoffService;
         private readonly IDialogService _dialogService;
         private readonly IConnectionStateService _connectionState;
+        private bool _isPageActive = false;
+        private bool _isSettingToggle = false; // Флаг для предотвращения рекурсии
 
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(CanConnect))]
-        [NotifyPropertyChangedFor(nameof(ConnectionColor))]
+        [NotifyPropertyChangedFor(nameof(CanTestConnection))]
         private string _apiKey = "";
 
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(ConnectionColor))]
         private string _connectionStatus = "Не подключено";
 
+        // Реальное состояние подключения к API
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(IsConnected))]
         [NotifyPropertyChangedFor(nameof(ConnectionColor))]
-        [NotifyPropertyChangedFor(nameof(CanGetInfo))]
+        [NotifyPropertyChangedFor(nameof(CanSaveToken))]
         private bool _isAuthenticated = false;
 
+        // Состояние переключателя в UI
         [ObservableProperty]
-        [NotifyPropertyChangedFor(nameof(CanConnect))]
-        [NotifyPropertyChangedFor(nameof(CanGetInfo))]
+        [NotifyPropertyChangedFor(nameof(CanTestConnection))]
+        private bool _isConnectionToggleEnabled = false;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(CanTestConnection))]
+        [NotifyPropertyChangedFor(nameof(CanSaveToken))]
         private bool _isLoading = false;
-
-        [ObservableProperty]
-        private string _accountInfoText = "Информация о счёте не загружена";
-
-        [ObservableProperty]
-        private string _portfolioInfoText = "Портфель не загружен";
-
-        [ObservableProperty]
-        private decimal _totalPortfolioValue;
-
-        [ObservableProperty]
-        private decimal _expectedYield;
 
         [ObservableProperty]
         private bool _hasSavedToken = false;
 
-        [ObservableProperty]
-        private bool _isCheckingSavedToken = false;
-
         // Вычисляемые свойства
         public bool IsConnected => _isAuthenticated;
         public Color ConnectionColor => _isAuthenticated ? Colors.Green : Colors.Red;
-        public bool CanConnect => !_isLoading && !string.IsNullOrWhiteSpace(_apiKey);
-        public bool CanGetInfo => _isAuthenticated && !_isLoading;
+        public bool CanTestConnection => !_isLoading && !string.IsNullOrWhiteSpace(_apiKey);
+        public bool CanSaveToken => _isAuthenticated && !_isLoading && !_hasSavedToken;
 
         public Tab4ViewModel(
             ITinkoffApiService tinkoffService,
@@ -63,223 +56,209 @@ namespace TabbedAppDemo.ViewModels
             _dialogService = dialogService;
             _connectionState = connectionState;
 
-            // При создании ViewModel проверяем сохранённый токен
-            InitializeAsync();
+            Debug.WriteLine("[Tab4ViewModel] Конструктор вызван");
         }
 
-        private async void InitializeAsync()
+        // Обработчик изменения состояния переключателя
+        partial void OnIsConnectionToggleEnabledChanged(bool value)
         {
-            try
+            if (_isPageActive && !_isSettingToggle)
             {
-                IsCheckingSavedToken = true;
+                Debug.WriteLine($"[Tab4ViewModel] Переключатель изменен: {value}");
 
-                // Проверяем наличие сохранённого токена
-                HasSavedToken = await _tinkoffService.HasSavedToken();
-
-                // Если есть сохранённый токен, предлагаем использовать его
-                if (HasSavedToken)
+                // Запускаем команду переключения подключения
+                Task.Run(async () =>
                 {
-                    // Даем время на загрузку интерфейса
-                    await Task.Delay(1500);
-
-                    var useSaved = await _dialogService.ShowConfirmationAsync(
-                        "Сохранённый токен",
-                        "Обнаружен сохранённый токен Tinkoff API.\n\n" +
-                        "Хотите использовать его для автоматического подключения?",
-                        "Подключиться", "Ввести новый");
-
-                    if (useSaved)
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
-                        await TryConnectWithSavedTokenAsync();
-                    }
-                    else
-                    {
-                        // Предлагаем удалить сохранённый токен
-                        var deleteToken = await _dialogService.ShowConfirmationAsync(
-                            "Удаление токена",
-                            "Хотите удалить сохранённый токен?",
-                            "Удалить", "Оставить");
+                        await ToggleConnectionCommand.ExecuteAsync(null);
+                    });
+                });
+            }
+        }
 
-                        if (deleteToken)
-                        {
-                            await ClearSavedTokenCommand();
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка инициализации: {ex.Message}");
-            }
-            finally
-            {
-                IsCheckingSavedToken = false;
-            }
+        // Метод для вызова при появлении страницы
+        public void OnAppearing()
+        {
+            _isPageActive = true;
+            Debug.WriteLine("[Tab4ViewModel] OnAppearing: страница активна");
+        }
+
+        // Метод для вызова при скрытии страницы
+        public void OnDisappearing()
+        {
+            _isPageActive = false;
+            Debug.WriteLine("[Tab4ViewModel] OnDisappearing: страница неактивна");
         }
 
         [RelayCommand]
-        private async Task ConnectToTinkoff()
+        private async Task ToggleConnection()
         {
-            if (string.IsNullOrWhiteSpace(ApiKey))
+            if (!_isPageActive) return;
+
+            // Синхронизируем переключатель с реальным состоянием
+            if (IsConnectionToggleEnabled == IsAuthenticated)
             {
-                await _dialogService.ShowAlertAsync("Ошибка", "Введите API ключ Tinkoff Invest", "OK");
+                Debug.WriteLine($"[Tab4ViewModel] Состояния синхронизированы: UI={IsConnectionToggleEnabled}, Real={IsAuthenticated}");
+                return;
+            }
+
+            if (!IsAuthenticated && string.IsNullOrWhiteSpace(ApiKey))
+            {
+                await _dialogService.ShowAlertAsync("Ошибка", "Введите API ключ", "OK");
+
+                // Сбрасываем переключатель обратно
+                _isSettingToggle = true;
+                IsConnectionToggleEnabled = false;
+                _isSettingToggle = false;
                 return;
             }
 
             IsLoading = true;
-            ConnectionStatus = "Подключение...";
 
             try
             {
-                var success = await _tinkoffService.ConnectAsync(ApiKey);
-
-                if (success)
+                if (IsAuthenticated)
                 {
-                    IsAuthenticated = true;
-                    ConnectionStatus = "Подключено ✓";
+                    // Отключение
+                    Debug.WriteLine("[Tab4ViewModel] Выполняем отключение...");
+                    _tinkoffService.Disconnect();
+                    IsAuthenticated = false;
+                    ConnectionStatus = "Не подключено";
 
-                    // Обновляем глобальный статус подключения
-                    await _connectionState.SetConnectedAsync(true);
+                    // Обновляем глобальное состояние подключения
+                    await _connectionState.SetConnectedAsync(false);
 
-                    // Автоматически загружаем базовую информацию
-                    await LoadAccountInfo();
-
-                    // Предлагаем сохранить токен только если он ещё не сохранён
-                    if (!HasSavedToken)
-                    {
-                        await AskToSaveToken(ApiKey);
-                    }
-
-                    await _dialogService.ShowAlertAsync("Успех",
-                        "Успешное подключение к Tinkoff Invest API", "OK");
+                    // UI уже должен быть синхронизирован через TwoWay binding
                 }
                 else
                 {
-                    ConnectionStatus = "Ошибка подключения";
-                    await _dialogService.ShowAlertAsync("Ошибка",
-                        "Не удалось подключиться к Tinkoff API", "OK");
+                    // Попытка подключения
+                    Debug.WriteLine("[Tab4ViewModel] Выполняем подключение...");
+                    ConnectionStatus = "Подключение...";
+
+                    // ConnectAsync проверяет токен и сохраняет его в памяти сервиса
+                    var success = await _tinkoffService.ConnectAsync(ApiKey);
+
+                    if (success)
+                    {
+                        IsAuthenticated = true;
+                        ConnectionStatus = "Подключено ✓";
+
+                        // Обновляем глобальное состояние подключения
+                        await _connectionState.SetConnectedAsync(true);
+
+                        await _dialogService.ShowAlertAsync("Успех",
+                            "Успешное подключение к Tinkoff Invest API", "OK");
+                    }
+                    else
+                    {
+                        IsAuthenticated = false;
+                        ConnectionStatus = "Ошибка подключения";
+                        await _dialogService.ShowAlertAsync("Ошибка",
+                            "Не удалось подключиться к Tinkoff API", "OK");
+                    }
                 }
             }
             catch (Exception ex)
             {
+                IsAuthenticated = false;
                 ConnectionStatus = "Ошибка";
+
                 await _dialogService.ShowAlertAsync("Ошибка подключения",
                     $"Ошибка: {ex.Message}\n\nПроверьте:\n1. Корректность API ключа\n2. Подключение к интернету\n3. Активность счёта Tinkoff Invest",
                     "OK");
             }
             finally
             {
+                // Синхронизируем UI переключатель с реальным состоянием
+                _isSettingToggle = true;
+                IsConnectionToggleEnabled = IsAuthenticated;
+                _isSettingToggle = false;
+
                 IsLoading = false;
+                Debug.WriteLine($"[Tab4ViewModel] Завершено. Состояние: IsAuthenticated={IsAuthenticated}");
             }
         }
 
         [RelayCommand]
-        private async Task UseSavedToken()
+        private async Task LoadSavedToken()
         {
-            if (!HasSavedToken)
-            {
-                await _dialogService.ShowAlertAsync("Ошибка", "Сохранённый токен не найден", "OK");
-                return;
-            }
-
-            await TryConnectWithSavedTokenAsync();
-        }
-
-        private async Task TryConnectWithSavedTokenAsync()
-        {
-            IsLoading = true;
-            ConnectionStatus = "Подключение с сохранённым токеном...";
+            if (!_isPageActive) return;
 
             try
             {
-                var success = await _tinkoffService.TryConnectWithSavedTokenAsync();
-                if (success)
+                Debug.WriteLine("[Tab4ViewModel] Загрузка сохраненного токена...");
+
+                var token = await _tinkoffService.LoadTokenFromFile();
+
+                if (!string.IsNullOrEmpty(token))
                 {
-                    IsAuthenticated = true;
-                    ConnectionStatus = "Подключено (сохранённый токен) ✓";
-
-                    // Обновляем глобальный статус подключения
-                    await _connectionState.SetConnectedAsync(true);
-
-                    // Загружаем информацию о счете
-                    await LoadAccountInfo();
-
-                    // Получаем информацию о счетах для отображения
-                    var accounts = await _tinkoffService.GetAccountsAsync();
-                    if (accounts.Any())
-                    {
-                        // Показываем маскированный токен
-                        var accountId = accounts[0].BrokerAccountId;
-                        var maskedId = accountId.Length > 4
-                            ? "••••••••" + accountId.Substring(accountId.Length - 4)
-                            : accountId;
-                        ApiKey = maskedId;
-                    }
+                    ApiKey = token;
+                    HasSavedToken = true;
 
                     await _dialogService.ShowAlertAsync("Успех",
-                        "Успешное подключение с сохранённым токеном", "OK");
+                        "Сохраненный токен загружен в поле ввода", "OK");
                 }
                 else
                 {
-                    ConnectionStatus = "Ошибка подключения";
-                    await _dialogService.ShowAlertAsync("Ошибка",
-                        "Не удалось подключиться с сохранённым токеном.\n\nВозможно, токен устарел или недействителен.",
-                        "OK");
-
-                    // Предлагаем удалить нерабочий токен
-                    var deleteToken = await _dialogService.ShowConfirmationAsync(
-                        "Недействительный токен",
-                        "Сохранённый токен не работает. Удалить его?",
-                        "Удалить", "Оставить");
-
-                    if (deleteToken)
-                    {
-                        await ClearSavedTokenCommand();
-                    }
+                    await _dialogService.ShowAlertAsync("Информация",
+                        "Сохраненный токен не найден", "OK");
                 }
             }
             catch (Exception ex)
             {
-                ConnectionStatus = "Ошибка";
-                await _dialogService.ShowAlertAsync("Ошибка подключения",
-                    $"Не удалось подключиться: {ex.Message}", "OK");
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        private async Task AskToSaveToken(string apiKey)
-        {
-            try
-            {
-                var saveToken = await _dialogService.ShowConfirmationAsync(
-                    "Сохранение токена",
-                    "Сохранить API-токен для последующего использования?\n\n" +
-                    "⚠️ Токен будет сохранён в зашифрованном виде на устройстве.\n" +
-                    "⚠️ Не сохраняйте токен на общедоступных устройствах.",
-                    "Сохранить", "Не сохранять");
-
-                if (saveToken)
-                {
-                    await _tinkoffService.SaveTokenAsync(apiKey);
-                    HasSavedToken = true;
-                    await _dialogService.ShowAlertAsync("Сохранено",
-                        "Токен успешно сохранён", "OK");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка при сохранении токена: {ex.Message}");
                 await _dialogService.ShowAlertAsync("Ошибка",
-                    "Не удалось сохранить токен", "OK");
+                    $"Не удалось загрузить токен: {ex.Message}", "OK");
             }
         }
 
         [RelayCommand]
-        private async Task ClearSavedTokenCommand()
+        private async Task SaveToken()
         {
+            if (!_isPageActive) return;
+
+            if (!IsAuthenticated)
+            {
+                await _dialogService.ShowAlertAsync("Ошибка", "Сначала подключитесь к API", "OK");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(ApiKey))
+            {
+                await _dialogService.ShowAlertAsync("Ошибка", "API ключ пустой", "OK");
+                return;
+            }
+
+            try
+            {
+                var confirm = await _dialogService.ShowConfirmationAsync(
+                    "Сохранение токена",
+                    "Сохранить текущий токен на устройстве?\n\n" +
+                    "Токен будет сохранен в зашифрованном виде для последующего использования.",
+                    "Сохранить", "Отмена");
+
+                if (confirm)
+                {
+                    await _tinkoffService.SaveTokenToFile(ApiKey);
+                    HasSavedToken = true;
+
+                    await _dialogService.ShowAlertAsync("Успех",
+                        "Токен успешно сохранен", "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _dialogService.ShowAlertAsync("Ошибка",
+                    $"Не удалось сохранить токен: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        private async Task ClearSavedToken()
+        {
+            if (!_isPageActive) return;
+
             try
             {
                 var confirm = await _dialogService.ShowConfirmationAsync(
@@ -293,10 +272,10 @@ namespace TabbedAppDemo.ViewModels
                     await _tinkoffService.ClearSavedToken();
                     HasSavedToken = false;
 
-                    // Также очищаем текущее подключение если оно было с сохранённым токеном
-                    if (IsAuthenticated && (string.IsNullOrEmpty(ApiKey) || ApiKey.Contains("••••")))
+                    // Если мы используем сохраненный токен, отключаемся
+                    if (IsAuthenticated && ApiKey.Contains("••••"))
                     {
-                        ClearConnection();
+                        await ToggleConnectionCommand.ExecuteAsync(null);
                     }
 
                     await _dialogService.ShowAlertAsync("Успех",
@@ -311,108 +290,10 @@ namespace TabbedAppDemo.ViewModels
         }
 
         [RelayCommand]
-        private async Task GetAccountInfo()
-        {
-            await LoadAccountInfo();
-        }
-
-        [RelayCommand]
-        private async Task GetPortfolioInfo()
-        {
-            if (!IsAuthenticated)
-            {
-                await _dialogService.ShowAlertAsync("Ошибка", "Сначала подключитесь к Tinkoff API", "OK");
-                return;
-            }
-
-            IsLoading = true;
-
-            try
-            {
-                var portfolio = await _tinkoffService.GetPortfolioAsync();
-
-                TotalPortfolioValue = portfolio.TotalPortfolioValue;
-                ExpectedYield = portfolio.ExpectedYield;
-
-                PortfolioInfoText = $"💰 Стоимость портфеля: {TotalPortfolioValue:C}\n" +
-                                   $"📈 Ожидаемая доходность: {ExpectedYield:C}\n" +
-                                   $"📊 Позиций: {portfolio.Positions.Count}\n" +
-                                   $"💱 Валюта: {portfolio.Currency}";
-
-                // Показываем детали портфеля
-                if (portfolio.Positions.Any())
-                {
-                    var positionsText = "📋 Детали портфеля:\n\n";
-
-                    foreach (var position in portfolio.Positions)
-                    {
-                        var tickerDisplay = !string.IsNullOrEmpty(position.Ticker)
-                            ? $"{position.Ticker}"
-                            : position.Figi;
-
-                        var nameDisplay = !string.IsNullOrEmpty(position.Name)
-                            ? position.Name
-                            : "Неизвестный инструмент";
-
-                        var positionValue = position.Balance * position.CurrentPrice;
-
-                        positionsText += $"🏷️  {tickerDisplay} ({nameDisplay})\n" +
-                                       $"   Кол-во: {position.Balance:N2}\n" +
-                                       $"   Ср. цена: {position.AveragePositionPrice:C}\n" +
-                                       $"   Текущая цена: {position.CurrentPrice:C}\n" +
-                                       $"   Стоимость: {positionValue:C}\n" +
-                                       $"   Доходность: {position.ExpectedYield:C}\n\n";
-                    }
-
-                    await _dialogService.ShowAlertAsync("Детали портфеля", positionsText, "OK");
-                }
-                else
-                {
-                    await _dialogService.ShowAlertAsync("Портфель", "Портфель пуст", "OK");
-                }
-            }
-            catch (Exception ex)
-            {
-                PortfolioInfoText = "❌ Ошибка загрузки портфеля";
-                await _dialogService.ShowAlertAsync("Ошибка",
-                    $"Не удалось загрузить портфель: {ex.Message}", "OK");
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        // Исправленный метод ClearConnection - только один метод
-        [RelayCommand]
-        private async Task ClearConnection()
-        {
-            try
-            {
-                _tinkoffService.Disconnect();
-                ApiKey = "";
-                IsAuthenticated = false;
-                ConnectionStatus = "Не подключено";
-                AccountInfoText = "Информация о счёте не загружена";
-                PortfolioInfoText = "Портфель не загружен";
-                TotalPortfolioValue = 0;
-                ExpectedYield = 0;
-
-                // Обновляем глобальный статус подключения
-                await _connectionState.SetConnectedAsync(false);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка в ClearConnection: {ex.Message}");
-                // Все равно продолжаем - очищаем локальное состояние
-                IsAuthenticated = false;
-                ConnectionStatus = "Не подключено";
-            }
-        }
-
-        [RelayCommand]
         private async Task ShowApiHelp()
         {
+            if (!_isPageActive) return;
+
             await _dialogService.ShowAlertAsync("Как получить API ключ",
                 "1. Откройте приложение Tinkoff Инвестиции\n" +
                 "2. Перейдите в Настройки → Для разработчиков\n" +
@@ -422,74 +303,6 @@ namespace TabbedAppDemo.ViewModels
                 "⚠️ Сохраняйте токен только на доверенных устройствах\n" +
                 "⚠️ Токен можно отозвать в любой момент в настройках приложения",
                 "Понятно");
-        }
-
-        [RelayCommand]
-        private async Task ShowTokenInfo()
-        {
-            if (!HasSavedToken)
-            {
-                await _dialogService.ShowAlertAsync("Информация",
-                    "Сохранённый токен не найден.\n\n" +
-                    "После успешного подключения вы сможете сохранить токен для последующего использования.",
-                    "OK");
-                return;
-            }
-
-            var tokenStatus = IsAuthenticated ? "используется" : "сохранён, но не подключён";
-
-            await _dialogService.ShowAlertAsync("Сохранённый токен",
-                $"📱 Статус: {tokenStatus}\n\n" +
-                $"Токен сохранён в зашифрованном виде на устройстве.\n" +
-                $"Для удаления токена нажмите кнопку 'Удалить сохранённый токен'.",
-                "OK");
-        }
-
-        private async Task LoadAccountInfo()
-        {
-            if (!IsAuthenticated) return;
-
-            IsLoading = true;
-
-            try
-            {
-                var info = await _tinkoffService.GetAccountInfoAsync();
-
-                AccountInfoText = $"🏦 Счёт: {info.BrokerAccountId}\n" +
-                                 $"📋 Тип: {info.BrokerAccountType}\n" +
-                                 $"📊 Статус: {info.Status}\n" +
-                                 $"💰 Баланс: {info.TotalBalance:C}\n" +
-                                 $"📈 Доходность: {info.ExpectedYield:C}\n" +
-                                 $"📂 Всего счетов: {info.TotalAccounts}\n" +
-                                 $"🕒 Обновлено: {info.LastUpdate:HH:mm:ss}";
-
-                // Обновляем общие значения
-                TotalPortfolioValue = info.TotalBalance ?? 0;
-                ExpectedYield = info.ExpectedYield ?? 0;
-
-                await _dialogService.ShowAlertAsync("Информация о счёте", AccountInfoText, "OK");
-            }
-            catch (Exception ex)
-            {
-                AccountInfoText = "❌ Ошибка загрузки информации";
-                await _dialogService.ShowAlertAsync("Ошибка",
-                    $"Не удалось получить информацию: {ex.Message}", "OK");
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        // Метод для быстрого отключения без асинхронности (если нужно)
-        public void QuickDisconnect()
-        {
-            _tinkoffService.Disconnect();
-            IsAuthenticated = false;
-            ConnectionStatus = "Не подключено";
-
-            // Запускаем обновление статуса без ожидания
-            _ = _connectionState.SetConnectedAsync(false);
         }
     }
 }

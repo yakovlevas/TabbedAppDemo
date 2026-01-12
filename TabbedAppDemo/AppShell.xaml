@@ -9,16 +9,16 @@
     Shell.NavBarIsVisible="False">
 
     <TabBar>
-        <Tab Title="Tab 1" Icon="tab1.png">
+        <Tab Title="Tab 1">
             <ShellContent ContentTemplate="{DataTemplate views:Tab1Page}" />
         </Tab>
-        <Tab Title="Tab 2" Icon="tab2.png">
+        <Tab Title="Tab 2">
             <ShellContent ContentTemplate="{DataTemplate views:Tab2Page}" />
         </Tab>
-        <Tab Title="Tab 3" Icon="tab3.png">
+        <Tab Title="Tab 3">
             <ShellContent ContentTemplate="{DataTemplate views:Tab3Page}" />
         </Tab>
-        <Tab Title="Tab 4" Icon="tab4.png">
+        <Tab Title="Tab 4">
             <ShellContent ContentTemplate="{DataTemplate views:Tab4Page}" />
         </Tab>
     </TabBar>

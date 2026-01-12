@@ -40,114 +40,129 @@ namespace TabbedAppDemo.Services
             };
             _httpClient.DefaultRequestHeaders.Add("accept", "application/json");
         }
-        // Добавить этот метод в класс TinkoffApiService
-        public async Task<List<Operation>> GetOperationsAsync(DateTime from, DateTime to,
-                                                            string accountId = null,
-                                                            int page = 1,
-                                                            int pageSize = 100)
-        {
-            EnsureConnected();
 
+        // НОВЫЙ МЕТОД: Простая проверка подключения
+        public async Task<bool> TestConnectionAsync(string apiKey)
+        {
             try
             {
-                var targetAccountId = accountId ?? _currentAccountId;
-
-                var request = new
+                var tempApiKey = apiKey?.Trim();
+                if (string.IsNullOrWhiteSpace(tempApiKey))
                 {
-                    accountId = targetAccountId,
-                    from = FormatDate(from),
-                    to = FormatDate(to),
-                    state = "OPERATION_STATE_EXECUTED"
-                };
-
-                var response = await SendRequest<GetOperationsResponse>(
-                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
-                    request);
-
-                if (response?.Operations == null || !response.Operations.Any())
-                {
-                    return new List<Operation>();
+                    return false;
                 }
 
-                // Применяем пагинацию на стороне клиента
-                var paginatedOperations = response.Operations
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
+                // Временно устанавливаем ключ
+                var originalHeaders = _httpClient.DefaultRequestHeaders.Authorization;
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tempApiKey);
 
-                // Преобразуем операции API в нашу модель
-                var operations = new List<Operation>();
-
-                foreach (var apiOperation in paginatedOperations)
+                try
                 {
-                    var operation = await ConvertApiOperationToModel(apiOperation);
-                    if (operation != null)
+                    // Простой запрос для проверки
+                    var request = new { };
+                    var response = await SendRequest<GetInfoResponse>(
+                        "tinkoff.public.invest.api.contract.v1.UsersService/GetInfo",
+                        request);
+
+                    return response != null;
+                }
+                finally
+                {
+                    // Восстанавливаем оригинальные заголовки
+                    _httpClient.DefaultRequestHeaders.Authorization = originalHeaders;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // НОВЫЙ МЕТОД: Только загрузка токена из файла
+        public async Task<string?> LoadTokenFromFile()
+        {
+            try
+            {
+                if (!File.Exists(TokenFilePath))
+                    return null;
+
+                var encryptedToken = await File.ReadAllTextAsync(TokenFilePath);
+                return SimpleDecrypt(encryptedToken);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // НОВЫЙ МЕТОД: Только сохранение токена в файл (без подключения)
+        public async Task SaveTokenToFile(string apiKey)
+        {
+            try
+            {
+                // Создаем директорию если её нет
+                var directory = Path.GetDirectoryName(TokenFilePath);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                // Шифруем токен
+                var encryptedToken = SimpleEncrypt(apiKey);
+                await File.WriteAllTextAsync(TokenFilePath, encryptedToken);
+
+                // Устанавливаем скрытый атрибут файла
+                try
+                {
+                    if (OperatingSystem.IsWindows())
                     {
-                        operations.Add(operation);
+                        File.SetAttributes(TokenFilePath, File.GetAttributes(TokenFilePath) | FileAttributes.Hidden);
                     }
                 }
-
-                return operations.OrderByDescending(o => o.Date).ToList();
+                catch
+                {
+                    // Игнорируем ошибки установки атрибутов
+                }
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
+                Console.WriteLine($"Ошибка сохранения токена: {ex.Message}");
+                throw;
             }
         }
-        // Добавить этот метод в класс TinkoffApiService (в конец класса перед #endregion):
-        public async Task<List<Operation>> GetOperationsWithPaginationAsync(DateTime from, DateTime to,
-                                                                          string accountId = null,
-                                                                          int page = 1,
-                                                                          int pageSize = 100)
-        {
-            EnsureConnected();
 
+        // Проверка наличия сохраненного токена
+        public async Task<bool> HasSavedToken()
+        {
             try
             {
-                var targetAccountId = accountId ?? _currentAccountId;
+                return File.Exists(TokenFilePath) &&
+                       !string.IsNullOrEmpty(await LoadTokenFromFile());
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
-                var request = new
+        // Удаление сохраненного токена
+        public async Task ClearSavedToken()
+        {
+            try
+            {
+                if (File.Exists(TokenFilePath))
                 {
-                    accountId = targetAccountId,
-                    from = FormatDate(from),
-                    to = FormatDate(to),
-                    state = "OPERATION_STATE_EXECUTED"
-                };
-
-                var response = await SendRequest<GetOperationsResponse>(
-                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
-                    request);
-
-                if (response?.Operations == null || !response.Operations.Any())
-                {
-                    return new List<Operation>();
+                    File.Delete(TokenFilePath);
                 }
-
-                // Применяем пагинацию на стороне клиента
-                var paginatedOperations = response.Operations
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
-
-                // Преобразуем операции API в нашу модель
-                var operations = new List<Operation>();
-
-                foreach (var apiOperation in paginatedOperations)
-                {
-                    var operation = await ConvertApiOperationToModel(apiOperation);
-                    if (operation != null)
-                    {
-                        operations.Add(operation);
-                    }
-                }
-
-                return operations.OrderByDescending(o => o.Date).ToList();
             }
             catch (Exception ex)
             {
-                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
+                Console.WriteLine($"Ошибка удаления токена: {ex.Message}");
             }
         }
+
+        // Полноценное подключение с инициализацией
         public async Task<bool> ConnectAsync(string apiKey)
         {
             try
@@ -202,6 +217,7 @@ namespace TabbedAppDemo.Services
             }
         }
 
+        // Методы для получения данных (оставлены для совместимости с другими вкладками)
         public async Task<AccountInfo> GetAccountInfoAsync()
         {
             EnsureConnected();
@@ -237,7 +253,7 @@ namespace TabbedAppDemo.Services
                     LastUpdate = DateTime.Now,
                     TotalBalance = portfolio.TotalPortfolioValue,
                     ExpectedYield = portfolio.ExpectedYield,
-                    Currency = "RUB", // По умолчанию
+                    Currency = "RUB",
                     TotalAccounts = accountsResponse.Accounts.Count
                 };
             }
@@ -272,13 +288,11 @@ namespace TabbedAppDemo.Services
                     Currency = "RUB"
                 };
 
-                // Рассчитываем общую стоимость
                 if (response.TotalAmountPortfolio != null)
                 {
                     portfolioInfo.TotalPortfolioValue = response.TotalAmountPortfolio.ToDecimal();
                 }
 
-                // Обрабатываем позиции
                 if (response.Positions != null)
                 {
                     foreach (var position in response.Positions)
@@ -291,24 +305,16 @@ namespace TabbedAppDemo.Services
                             CurrentPrice = position.CurrentPrice?.ToDecimal() ?? 0
                         };
 
-                        // Получаем тикер для FIGI
                         portfolioPosition.Ticker = await GetTickerForFigi(position.Figi);
-
-                        // Получаем название инструмента
                         portfolioPosition.Name = await GetInstrumentName(position.Figi);
-
-                        // Рассчитываем среднюю цену (для упрощения используем текущую)
                         portfolioPosition.AveragePositionPrice = portfolioPosition.CurrentPrice;
-
-                        // Рассчитываем доходность (0 для упрощения)
                         portfolioPosition.ExpectedYield = 0;
 
                         portfolioInfo.Positions.Add(portfolioPosition);
                     }
 
-                    // Рассчитываем ожидаемую доходность (суммируем стоимость всех позиций)
                     portfolioInfo.ExpectedYield = portfolioInfo.Positions
-                        .Sum(p => p.Balance * p.CurrentPrice * 0.01m); // Пример: 1% от стоимости
+                        .Sum(p => p.Balance * p.CurrentPrice * 0.01m);
                 }
 
                 return portfolioInfo;
@@ -369,7 +375,6 @@ namespace TabbedAppDemo.Services
                     return new List<Operation>();
                 }
 
-                // Преобразуем операции API в нашу модель
                 var operations = new List<Operation>();
 
                 foreach (var apiOperation in response.Operations)
@@ -400,105 +405,60 @@ namespace TabbedAppDemo.Services
             _figiToTickerCache.Clear();
         }
 
-        #region Token Persistence Methods
-
-        public async Task<bool> TryConnectWithSavedTokenAsync()
+        // Метод для получения операций с пагинацией (для 2-й вкладки)
+        public async Task<List<Operation>> GetOperationsWithPaginationAsync(DateTime from, DateTime to,
+                                                                          string accountId = null,
+                                                                          int page = 1,
+                                                                          int pageSize = 100)
         {
+            EnsureConnected();
+
             try
             {
-                var savedToken = await LoadTokenAsync();
-                if (!string.IsNullOrEmpty(savedToken))
-                {
-                    return await ConnectAsync(savedToken);
-                }
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
+                var targetAccountId = accountId ?? _currentAccountId;
 
-        public async Task SaveTokenAsync(string apiKey)
-        {
-            try
-            {
-                // Создаем директорию если её нет
-                var directory = Path.GetDirectoryName(TokenFilePath);
-                if (!Directory.Exists(directory))
+                var request = new
                 {
-                    Directory.CreateDirectory(directory);
+                    accountId = targetAccountId,
+                    from = FormatDate(from),
+                    to = FormatDate(to),
+                    state = "OPERATION_STATE_EXECUTED"
+                };
+
+                var response = await SendRequest<GetOperationsResponse>(
+                    "tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations",
+                    request);
+
+                if (response?.Operations == null || !response.Operations.Any())
+                {
+                    return new List<Operation>();
                 }
 
-                // Шифруем токен (базовое шифрование для безопасности)
-                var encryptedToken = SimpleEncrypt(apiKey);
-                await File.WriteAllTextAsync(TokenFilePath, encryptedToken);
+                // Применяем пагинацию на стороне клиента
+                var paginatedOperations = response.Operations
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
 
-                // Устанавливаем скрытый атрибут файла (только на Windows)
-                try
+                // Преобразуем операции API в нашу модель
+                var operations = new List<Operation>();
+
+                foreach (var apiOperation in paginatedOperations)
                 {
-                    if (OperatingSystem.IsWindows())
+                    var operation = await ConvertApiOperationToModel(apiOperation);
+                    if (operation != null)
                     {
-                        File.SetAttributes(TokenFilePath, File.GetAttributes(TokenFilePath) | FileAttributes.Hidden);
+                        operations.Add(operation);
                     }
                 }
-                catch
-                {
-                    // Игнорируем ошибки установки атрибутов
-                }
+
+                return operations.OrderByDescending(o => o.Date).ToList();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка сохранения токена: {ex.Message}");
-                throw;
+                throw new Exception($"Ошибка получения операций: {ex.Message}", ex);
             }
         }
-
-        public async Task<bool> HasSavedToken()
-        {
-            try
-            {
-                return File.Exists(TokenFilePath) &&
-                       !string.IsNullOrEmpty(await LoadTokenAsync());
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public async Task ClearSavedToken()
-        {
-            try
-            {
-                if (File.Exists(TokenFilePath))
-                {
-                    File.Delete(TokenFilePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Ошибка удаления токена: {ex.Message}");
-            }
-        }
-
-        private async Task<string> LoadTokenAsync()
-        {
-            try
-            {
-                if (!File.Exists(TokenFilePath))
-                    return null;
-
-                var encryptedToken = await File.ReadAllTextAsync(TokenFilePath);
-                return SimpleDecrypt(encryptedToken);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        #endregion
 
         #region Private Methods
 
@@ -513,7 +473,6 @@ namespace TabbedAppDemo.Services
             if (string.IsNullOrEmpty(figi))
                 return "";
 
-            // Проверяем кэш
             if (_figiToTickerCache.TryGetValue(figi, out string cachedTicker))
                 return cachedTicker;
 
@@ -597,7 +556,6 @@ namespace TabbedAppDemo.Services
                     Status = GetOperationStateName(apiOperation.State)
                 };
 
-                // Получаем информацию об инструменте по FIGI
                 if (!string.IsNullOrEmpty(apiOperation.Figi))
                 {
                     var instrumentInfo = await GetInstrumentInfoByFigi(apiOperation.Figi);
@@ -607,7 +565,6 @@ namespace TabbedAppDemo.Services
                 }
                 else
                 {
-                    // Для денежных операций
                     operation.Ticker = GetCurrencySymbol(operation.Currency);
                     operation.Name = GetOperationDescription(apiOperation.OperationType, operation.Currency);
                     operation.InstrumentType = "Денежная операция";
@@ -712,12 +669,10 @@ namespace TabbedAppDemo.Services
             };
         }
 
-        // Простое шифрование для базовой безопасности
         private string SimpleEncrypt(string input)
         {
             try
             {
-                // Простая XOR шифровка с ключом
                 var key = "TabbedAppDemo2024!";
                 var result = new char[input.Length];
 
@@ -776,7 +731,7 @@ namespace TabbedAppDemo.Services
 
         #endregion
 
-        #region Response Models (из тестовой программы)
+        #region Response Models
 
         public class GetInfoResponse
         {

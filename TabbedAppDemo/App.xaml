@@ -10,6 +10,9 @@
             <!-- Конвертер для инвертирования bool -->
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:BoolToEmptyViewConverter x:Key="BoolToEmptyViewConverter" />
+            <converters:BoolToConnectionTextConverter x:Key="BoolToConnectionTextConverter" />
+            <converters:BoolToColorConverter x:Key="BoolToColorConverter" />
+            
 
             <!-- Цвета (правильное объявление) -->
             <Color x:Key="PrimaryColor">#512BD4</Color>

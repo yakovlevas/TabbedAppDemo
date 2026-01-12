@@ -6,27 +6,29 @@ namespace TabbedAppDemo.Services
 {
     public interface ITinkoffApiService
     {
+        // Основные методы подключения
         Task<bool> ConnectAsync(string apiKey);
+        void Disconnect();
+        Task<bool> IsConnected();
+
+        // Методы для получения данных (для других вкладок)
         Task<AccountInfo> GetAccountInfoAsync();
         Task<PortfolioInfo> GetPortfolioAsync();
         Task<List<Account>> GetAccountsAsync();
-        Task<bool> IsConnected();
-        void Disconnect();
-
-        // Новые методы для работы с сохранением токена
-        Task<bool> TryConnectWithSavedTokenAsync();
-        Task SaveTokenAsync(string apiKey);
-        Task<bool> HasSavedToken();
-        Task ClearSavedToken();
-
-        // Метод для получения операций (основной, без пагинации)
         Task<List<Operation>> GetOperationsAsync(DateTime from, DateTime to, string accountId = null);
 
-        // Новый метод для получения операций с пагинацией
+        // Метод с пагинацией для 2-й вкладки
         Task<List<Operation>> GetOperationsWithPaginationAsync(DateTime from, DateTime to,
                                                               string accountId = null,
                                                               int page = 1,
                                                               int pageSize = 100);
+
+        // Новые методы для работы с токенами по новой логике
+        Task<bool> TestConnectionAsync(string apiKey);      // Простая проверка подключения
+        Task<string?> LoadTokenFromFile();                  // Только загрузка токена из файла
+        Task SaveTokenToFile(string apiKey);                // Только сохранение токена в файл
+        Task ClearSavedToken();                             // Удаление сохраненного токена
+        Task<bool> HasSavedToken();                         // Проверка наличия сохраненного токена
     }
 
     public class AccountInfo
@@ -84,7 +86,6 @@ namespace TabbedAppDemo.Services
         public string Status { get; set; }
     }
 
-    // Вспомогательный класс для информации об инструменте
     public class InstrumentInfo
     {
         public string Ticker { get; set; } = "";

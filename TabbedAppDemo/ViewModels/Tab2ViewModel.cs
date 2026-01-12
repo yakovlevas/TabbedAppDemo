@@ -16,6 +16,7 @@ namespace TabbedAppDemo.ViewModels
         private CancellationTokenSource _cancellationTokenSource;
         private readonly object _operationsLock = new object();
         private bool _isInitialized = false;
+        private bool _isPageActive = false; // Отслеживаем активность страницы
 
         [ObservableProperty]
         private string _title = "💼 Мои Сделки";
@@ -40,7 +41,7 @@ namespace TabbedAppDemo.ViewModels
         private const int CHUNK_SIZE = 50;
 
         // Приватное поле для хранения состояния
-        private bool _isConnected;
+        private bool _isConnected = false; // Явная инициализация
 
         // Публичное свойство с диагностикой
         public bool IsConnected
@@ -103,11 +104,12 @@ namespace TabbedAppDemo.ViewModels
 
         public Tab2ViewModel(ITinkoffApiService tinkoffService, IDialogService dialogService, IConnectionStateService connectionState)
         {
-            _tinkoffService = tinkoffService;
-            _dialogService = dialogService;
-            _connectionState = connectionState;
+            _tinkoffService = tinkoffService ?? throw new ArgumentNullException(nameof(tinkoffService));
+            _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
+            _connectionState = connectionState ?? throw new ArgumentNullException(nameof(connectionState));
 
             Debug.WriteLine($"[Tab2ViewModel] Конструктор вызван");
+            Debug.WriteLine($"[Tab2ViewModel] Начальное состояние подключения из сервиса: {_connectionState.IsConnected}");
 
             // Инициализируем пустые коллекции для UI
             InitializeEmptyCollections();
@@ -117,9 +119,14 @@ namespace TabbedAppDemo.ViewModels
         public async Task OnAppearing()
         {
             if (_isInitialized)
+            {
+                _isPageActive = true;
+                Debug.WriteLine($"[Tab2ViewModel] OnAppearing: страница снова активна");
                 return;
+            }
 
             _isInitialized = true;
+            _isPageActive = true;
 
             Debug.WriteLine($"[Tab2ViewModel] OnAppearing вызван");
 
@@ -131,6 +138,13 @@ namespace TabbedAppDemo.ViewModels
             Debug.WriteLine($"[Tab2ViewModel] Подписка на ConnectionChanged установлена");
         }
 
+        // Метод для вызова при скрытии страницы
+        public void OnDisappearing()
+        {
+            _isPageActive = false;
+            Debug.WriteLine($"[Tab2ViewModel] OnDisappearing: страница неактивна");
+        }
+
         private async Task UpdateConnectionStateFromService()
         {
             try
@@ -138,10 +152,8 @@ namespace TabbedAppDemo.ViewModels
                 var currentStatus = _connectionState.IsConnected;
                 Debug.WriteLine($"[Tab2ViewModel] Обновление состояния из сервиса: {currentStatus}");
 
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    IsConnected = currentStatus;
-                });
+                // Не вызываем MainThread, чтобы избежать рекурсии
+                IsConnected = currentStatus;
             }
             catch (Exception ex)
             {
@@ -159,19 +171,22 @@ namespace TabbedAppDemo.ViewModels
         private void OnConnectionChanged(object sender, bool isConnected)
         {
             Debug.WriteLine($"[Tab2ViewModel] OnConnectionChanged получено событие: {isConnected}");
+            Debug.WriteLine($"[Tab2ViewModel] Страница активна: {_isPageActive}");
 
-            // Обновляем в основном потоке
-            MainThread.BeginInvokeOnMainThread(() =>
+            // Обновляем состояние
+            IsConnected = isConnected;
+
+            // Автоматически загружаем только если страница активна
+            if (isConnected && _isPageActive && !_operationsList.Any())
             {
-                Debug.WriteLine($"[Tab2ViewModel] Обновляем IsConnected в UI потоке: {IsConnected} -> {isConnected}");
-                IsConnected = isConnected;
-
-                // Показываем уведомление только если подключились
-                if (isConnected)
-                {
-                    _ = _dialogService.ShowToastAsync("✅ Подключено к Tinkoff API", 2);
-                }
-            });
+                Debug.WriteLine($"[Tab2ViewModel] Автоматическая загрузка при подключении");
+                // Не загружаем сразу, даем пользователю решить
+                _ = _dialogService.ShowToastAsync("✅ Подключено. Нажмите 'Загрузить' для получения сделок", 2);
+            }
+            else if (isConnected)
+            {
+                _ = _dialogService.ShowToastAsync("✅ Подключено к Tinkoff API", 2);
+            }
         }
 
         [RelayCommand]
@@ -358,45 +373,11 @@ namespace TabbedAppDemo.ViewModels
             var stopwatch = Stopwatch.StartNew();
             Debug.WriteLine($"[Tab2ViewModel] Начало обработки {apiOperations.Count} операций");
 
-            // ОТЛАДОЧНЫЙ ВЫВОД 1: Проверяем входные данные от API
-            Debug.WriteLine($"[Tab2ViewModel] === ОТЛАДКА: Проверка входных данных ===");
-            if (apiOperations == null)
-            {
-                Debug.WriteLine($"[Tab2ViewModel] ОШИБКА: apiOperations is null!");
-                return;
-            }
-
-            if (!apiOperations.Any())
-            {
-                Debug.WriteLine($"[Tab2ViewModel] ПРЕДУПРЕЖДЕНИЕ: apiOperations пустой список!");
-                return;
-            }
-
-            // Выводим информацию о первых 5 операциях
-            for (int i = 0; i < Math.Min(5, apiOperations.Count); i++)
-            {
-                var apiOp = apiOperations[i];
-                Debug.WriteLine($"[Tab2ViewModel] Операция #{i + 1}:");
-                Debug.WriteLine($"[Tab2ViewModel]   ID: {apiOp.Id}");
-                Debug.WriteLine($"[Tab2ViewModel]   Дата: {apiOp.Date}");
-                Debug.WriteLine($"[Tab2ViewModel]   Тикер: '{apiOp.Ticker}'");
-                Debug.WriteLine($"[Tab2ViewModel]   Название: '{apiOp.Name}'");
-                Debug.WriteLine($"[Tab2ViewModel]   Тип операции: '{apiOp.OperationType}'");
-                Debug.WriteLine($"[Tab2ViewModel]   Сумма: {apiOp.Payment:C}");
-                Debug.WriteLine($"[Tab2ViewModel]   Количество: {apiOp.Quantity}");
-                Debug.WriteLine($"[Tab2ViewModel]   Валюта: '{apiOp.Currency}'");
-            }
-            Debug.WriteLine($"[Tab2ViewModel] === Конец отладки входных данных ===");
-
             // Выполняем обработку в фоновом потоке
             var operationsToAdd = await Task.Run(async () =>
             {
                 var result = new List<OperationViewModel>();
                 int processed = 0;
-                int errors = 0;
-
-                // ОТЛАДОЧНЫЙ ВЫВОД 2: Начало обработки
-                Debug.WriteLine($"[Tab2ViewModel] === ОТЛАДКА: Начало обработки в Task.Run ===");
 
                 // Обрабатываем данные частями
                 for (int i = 0; i < apiOperations.Count; i += CHUNK_SIZE)
@@ -405,9 +386,6 @@ namespace TabbedAppDemo.ViewModels
                         break;
 
                     var chunk = apiOperations.Skip(i).Take(CHUNK_SIZE).ToList();
-
-                    // ОТЛАДОЧНЫЙ ВЫВОД 3: Информация о чанке
-                    Debug.WriteLine($"[Tab2ViewModel] Обработка чанка: {i}-{Math.Min(i + CHUNK_SIZE, apiOperations.Count)}");
 
                     foreach (var apiOp in chunk)
                     {
@@ -432,25 +410,12 @@ namespace TabbedAppDemo.ViewModels
                                 Currency = apiOp.Currency
                             };
 
-                            // ОТЛАДОЧНЫЙ ВЫВОД 4: Проверка созданной ViewModel
-                            if (result.Count < 3) // Выводим только первые 3 для отладки
-                            {
-                                Debug.WriteLine($"[Tab2ViewModel] Создана ViewModel #{result.Count + 1}:");
-                                Debug.WriteLine($"[Tab2ViewModel]   Ticker: '{operationVm.Ticker}'");
-                                Debug.WriteLine($"[Tab2ViewModel]   Name: '{operationVm.Name}'");
-                                Debug.WriteLine($"[Tab2ViewModel]   Amount: {operationVm.Amount:C}");
-                                Debug.WriteLine($"[Tab2ViewModel]   Date: {operationVm.Date}");
-                                Debug.WriteLine($"[Tab2ViewModel]   Icon: '{operationVm.Icon}'");
-                            }
-
                             result.Add(operationVm);
                             processed++;
                         }
                         catch (Exception ex)
                         {
-                            errors++;
                             Debug.WriteLine($"[Tab2ViewModel] ОШИБКА при создании ViewModel: {ex.Message}");
-                            Debug.WriteLine($"[Tab2ViewModel] Данные операции: Ticker='{apiOp.Ticker}', Name='{apiOp.Name}'");
                         }
                     }
 
@@ -462,36 +427,12 @@ namespace TabbedAppDemo.ViewModels
                         LoadingStatus = $"Обработано {processed} из {apiOperations.Count}";
                     });
 
-                    // ОТЛАДОЧНЫЙ ВЫВОД 5: Прогресс обработки
-                    if (processed % 20 == 0 || processed == apiOperations.Count)
-                    {
-                        Debug.WriteLine($"[Tab2ViewModel] Прогресс: {processed}/{apiOperations.Count} операций");
-                    }
-
                     // Делаем небольшую паузу для отзывчивости UI
                     if (i + CHUNK_SIZE < apiOperations.Count)
                     {
                         await Task.Delay(10, cancellationToken);
                     }
                 }
-
-                // ОТЛАДОЧНЫЙ ВЫВОД 6: Итоги обработки
-                Debug.WriteLine($"[Tab2ViewModel] === ОТЛАДКА: Итоги обработки ===");
-                Debug.WriteLine($"[Tab2ViewModel] Всего обработано: {processed} операций");
-                Debug.WriteLine($"[Tab2ViewModel] Успешно создано: {result.Count} ViewModel");
-                Debug.WriteLine($"[Tab2ViewModel] Ошибок: {errors}");
-
-                if (result.Count > 0)
-                {
-                    Debug.WriteLine($"[Tab2ViewModel] Примеры созданных ViewModel:");
-                    for (int i = 0; i < Math.Min(3, result.Count); i++)
-                    {
-                        var vm = result[i];
-                        Debug.WriteLine($"[Tab2ViewModel]   #{i + 1}: {vm.Date:dd.MM.yy HH:mm} {vm.Ticker} {vm.Amount:C} ({vm.OperationType})");
-                    }
-                }
-
-                Debug.WriteLine($"[Tab2ViewModel] === Конец отладки обработки ===");
 
                 return result;
             }, cancellationToken);
@@ -507,15 +448,7 @@ namespace TabbedAppDemo.ViewModels
             // Сохраняем в локальный список
             lock (_operationsLock)
             {
-                int beforeCount = _operationsList.Count;
                 _operationsList.AddRange(operationsToAdd);
-                int afterCount = _operationsList.Count;
-
-                Debug.WriteLine($"[Tab2ViewModel] === ОТЛАДКА: Обновление локального списка ===");
-                Debug.WriteLine($"[Tab2ViewModel] Было операций: {beforeCount}");
-                Debug.WriteLine($"[Tab2ViewModel] Добавлено: {operationsToAdd.Count}");
-                Debug.WriteLine($"[Tab2ViewModel] Стало операций: {afterCount}");
-                Debug.WriteLine($"[Tab2ViewModel] === Конец отладки локального списка ===");
             }
 
             // Оптимизированное обновление UI коллекции
@@ -527,13 +460,11 @@ namespace TabbedAppDemo.ViewModels
             // Планируем группировку на потом (отложенная операция)
             if (!cancellationToken.IsCancellationRequested)
             {
-                Debug.WriteLine($"[Tab2ViewModel] Планирование группировки...");
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(500, cancellationToken);
                     if (!cancellationToken.IsCancellationRequested)
                     {
-                        Debug.WriteLine($"[Tab2ViewModel] Запуск группировки...");
                         await GroupOperations(cancellationToken);
                     }
                 }, cancellationToken);
@@ -545,26 +476,17 @@ namespace TabbedAppDemo.ViewModels
 
         private async Task UpdateUiCollectionAsync(List<OperationViewModel> operationsToAdd, CancellationToken cancellationToken)
         {
-            Debug.WriteLine($"[Tab2ViewModel] === ОТЛАДКА: UpdateUiCollectionAsync ===");
-            Debug.WriteLine($"[Tab2ViewModel] Получено операций для UI: {operationsToAdd.Count}");
-
             if (operationsToAdd == null || !operationsToAdd.Any())
-            {
-                Debug.WriteLine($"[Tab2ViewModel] ПРЕДУПРЕЖДЕНИЕ: operationsToAdd пустой или null!");
                 return;
-            }
 
             await MainThread.InvokeOnMainThreadAsync(async () =>
             {
                 try
                 {
-                    Debug.WriteLine($"[Tab2ViewModel] В UI потоке: Operations.Count до = {Operations.Count}");
-
                     if (Operations.Count == 0 && operationsToAdd.Count > 100)
                     {
                         // Для большого количества данных создаем новую коллекцию
                         Operations = new ObservableCollection<OperationViewModel>(operationsToAdd);
-                        Debug.WriteLine($"[Tab2ViewModel] Создана новая коллекция: {Operations.Count} операций");
                     }
                     else
                     {
@@ -580,21 +502,6 @@ namespace TabbedAppDemo.ViewModels
                             {
                                 Operations.Add(item);
                                 addedCount++;
-
-                                // Отладочный вывод для первых 5 операций
-                                if (addedCount <= 5)
-                                {
-                                    Debug.WriteLine($"[Tab2ViewModel] Добавлена операция #{addedCount}:");
-                                    Debug.WriteLine($"[Tab2ViewModel]   Ticker: '{item.Ticker}'");
-                                    Debug.WriteLine($"[Tab2ViewModel]   Amount: {item.Amount:C}");
-                                    Debug.WriteLine($"[Tab2ViewModel]   Date: {item.Date:dd.MM.yy HH:mm}");
-                                }
-                            }
-
-                            // Отладочный вывод каждые 50 операций
-                            if (addedCount % 50 == 0 && addedCount > 0)
-                            {
-                                Debug.WriteLine($"[Tab2ViewModel] Добавлено {addedCount} операций в UI коллекцию");
                             }
 
                             // Даем UI время на обновление
@@ -603,24 +510,6 @@ namespace TabbedAppDemo.ViewModels
                                 await Task.Delay(5, cancellationToken);
                             }
                         }
-                        Debug.WriteLine($"[Tab2ViewModel] Всего добавлено: {addedCount} операций");
-                    }
-
-                    Debug.WriteLine($"[Tab2ViewModel] Operations.Count после = {Operations.Count}");
-
-                    // Проверяем, что операции действительно добавились
-                    if (Operations.Count > 0)
-                    {
-                        Debug.WriteLine($"[Tab2ViewModel] Проверка первых 3 операций в UI коллекции:");
-                        for (int i = 0; i < Math.Min(3, Operations.Count); i++)
-                        {
-                            var op = Operations[i];
-                            Debug.WriteLine($"[Tab2ViewModel]   #{i + 1}: {op.Date:dd.MM.yy HH:mm} {op.Ticker} {op.Amount:C}");
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"[Tab2ViewModel] ВНИМАНИЕ: Operations коллекция пустая после обновления!");
                     }
                 }
                 catch (Exception ex)
@@ -628,8 +517,6 @@ namespace TabbedAppDemo.ViewModels
                     Debug.WriteLine($"[Tab2ViewModel] ОШИБКА в UpdateUiCollectionAsync: {ex.Message}");
                 }
             });
-
-            Debug.WriteLine($"[Tab2ViewModel] === Конец отладки UpdateUiCollectionAsync ===");
         }
 
         private async Task ClearCollectionsAsync()
@@ -666,14 +553,7 @@ namespace TabbedAppDemo.ViewModels
                 {
                     lock (_operationsLock)
                     {
-                        // Отладочная информация
-                        Debug.WriteLine($"[Tab2ViewModel] Операции для группировки:");
-                        foreach (var op in _operationsList.Take(5))
-                        {
-                            Debug.WriteLine($"[Tab2ViewModel]   - {op.Date:dd.MM.yyyy HH:mm} {op.Ticker} {op.Amount:C}");
-                        }
-
-                        var groups = _operationsList
+                        return _operationsList
                             .GroupBy(o => o.Date.Date)
                             .Select(g => new OperationGroupViewModel
                             {
@@ -684,14 +564,6 @@ namespace TabbedAppDemo.ViewModels
                             })
                             .OrderByDescending(g => g.Date)
                             .ToList();
-
-                        Debug.WriteLine($"[Tab2ViewModel] Создано {groups.Count} групп");
-                        foreach (var group in groups)
-                        {
-                            Debug.WriteLine($"[Tab2ViewModel]   Группа {group.DateText}: {group.Operations.Count} операций");
-                        }
-
-                        return groups;
                     }
                 }
                 catch (Exception ex)
@@ -709,22 +581,6 @@ namespace TabbedAppDemo.ViewModels
             {
                 GroupedOperations = new ObservableCollection<OperationGroupViewModel>(grouped);
                 Debug.WriteLine($"[Tab2ViewModel] GroupedOperations обновлено: {GroupedOperations.Count} групп");
-
-                // Проверка, что операции есть в группах
-                if (GroupedOperations.Any())
-                {
-                    foreach (var group in GroupedOperations)
-                    {
-                        Debug.WriteLine($"[Tab2ViewModel] Группа {group.DateText} содержит {group.Operations?.Count ?? 0} операций");
-                        if (group.Operations != null && group.Operations.Any())
-                        {
-                            foreach (var op in group.Operations.Take(3))
-                            {
-                                Debug.WriteLine($"[Tab2ViewModel]   Операция: {op.Ticker} {op.Amount:C}");
-                            }
-                        }
-                    }
-                }
             });
         }
 
@@ -983,7 +839,7 @@ namespace TabbedAppDemo.ViewModels
             await _dialogService.ShowToastAsync($"Период: {GetRangeDescription(range)}", 1);
 
             // Автоматически загружаем операции для нового периода
-            if (IsConnected)
+            if (IsConnected && _isPageActive)
             {
                 await LoadOperationsAsync();
             }
